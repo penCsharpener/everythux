@@ -234,8 +234,16 @@ fn draw_table(ui: &mut Ui, p: &TableParams<'_>, cache: &mut RowCache) -> TableOu
         .cell_layout(Layout::left_to_right(Align::Center))
         .auto_shrink([false, false])
         .max_scroll_height(f32::INFINITY);
-    for col in p.columns {
-        builder = builder.column(Column::initial(col.width.max(40.0)).at_least(40.0).clip(true));
+    // The last column takes whatever width is left, so it is never pushed off-screen when the
+    // saved widths add up to more than the window.
+    let last = p.columns.len().saturating_sub(1);
+    for (i, col) in p.columns.iter().enumerate() {
+        let column = if i == last {
+            Column::remainder().at_least(60.0)
+        } else {
+            Column::initial(col.width.max(40.0)).at_least(40.0)
+        };
+        builder = builder.column(column.clip(true));
     }
     if let Some(row) = p.scroll_to {
         builder = builder.scroll_to_row(row, None);

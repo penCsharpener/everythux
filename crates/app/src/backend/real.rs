@@ -22,6 +22,13 @@ enum UdisksTask {
     Mount(String),
 }
 
+/// Commands for the thread that owns the [`Indexer`].
+enum IndexerCmd {
+    Submit(Job),
+    Cancel,
+    Settings(IndexerSettings),
+}
+
 struct PreviewHandle {
     service: PreviewService,
     limits: PreviewLimits,
@@ -29,7 +36,9 @@ struct PreviewHandle {
 
 /// Runs the real services. Every call just queues work; nothing here blocks the UI thread.
 pub(crate) struct RealBackend {
-    indexer: Option<Indexer>,
+    /// `None` only while dropping; closing it stops the indexer host thread.
+    indexer_tx: Option<Sender<IndexerCmd>>,
+    indexer_host: Option<std::thread::JoinHandle<()>>,
     search: SearchService,
     preview: Mutex<Option<PreviewHandle>>,
     events: Sender<BackendEvent>,
@@ -50,19 +59,19 @@ impl RealBackend {
     ) -> (Self, Receiver<BackendEvent>) {
         let (events, rx) = crossbeam_channel::unbounded();
 
-        let indexer = match Indexer::start(&paths.db_file, settings) {
-            Ok((indexer, index_rx)) => {
-                forward(index_rx, events.clone(), ctx.clone(), BackendEvent::Index);
-                Some(indexer)
-            }
-            Err(e) => {
-                tracing::error!(error = %e, db = %paths.db_file.display(), "cannot start indexer");
-                let _ = events.send(BackendEvent::Fatal(format!(
-                    "Cannot open the index database {}: {e}",
-                    paths.db_file.display()
-                )));
-                None
-            }
+        // `Indexer::start` opens and integrity-checks the database, which takes seconds on large
+        // indexes, so it runs on a host thread that then owns the indexer. Commands queue up in
+        // the channel meanwhile and are delivered once it's running.
+        let (indexer_tx, indexer_rx) = crossbeam_channel::unbounded::<IndexerCmd>();
+        let indexer_host = {
+            let db_file = paths.db_file.clone();
+            let events = events.clone();
+            let ctx = ctx.clone();
+            std::thread::Builder::new()
+                .name("everythux-indexer-host".to_owned())
+                .spawn(move || run_indexer_host(&db_file, settings, &indexer_rx, &events, &ctx))
+                .map_err(|e| tracing::error!(error = %e, "cannot spawn indexer host thread"))
+                .ok()
         };
 
         let (search, search_rx) = SearchService::start(Arc::new(IndexSnapshot::empty()));
@@ -109,7 +118,8 @@ impl RealBackend {
 
         (
             Self {
-                indexer,
+                indexer_tx: Some(indexer_tx),
+                indexer_host,
                 search,
                 preview: Mutex::new(None),
                 events,
@@ -124,24 +134,73 @@ impl RealBackend {
     }
 }
 
+/// Body of the indexer host thread: starts the indexer, forwards its events and relays commands
+/// until the backend is dropped (which closes `commands`); dropping the indexer then joins it.
+fn run_indexer_host(
+    db_file: &std::path::Path,
+    settings: IndexerSettings,
+    commands: &Receiver<IndexerCmd>,
+    events: &Sender<BackendEvent>,
+    ctx: &egui::Context,
+) {
+    let indexer = match Indexer::start(db_file, settings) {
+        Ok((indexer, index_rx)) => {
+            forward(index_rx, events.clone(), ctx.clone(), BackendEvent::Index);
+            indexer
+        }
+        Err(e) => {
+            tracing::error!(error = %e, db = %db_file.display(), "cannot start indexer");
+            let _ = events.send(BackendEvent::Fatal(format!(
+                "Cannot open the index database {}: {e}",
+                db_file.display()
+            )));
+            ctx.request_repaint();
+            return;
+        }
+    };
+    for cmd in commands {
+        match cmd {
+            IndexerCmd::Submit(job) => {
+                let id = indexer.submit(job);
+                tracing::debug!(?id, "index job submitted");
+            }
+            IndexerCmd::Cancel => indexer.cancel_current(),
+            IndexerCmd::Settings(settings) => indexer.update_settings(settings),
+        }
+    }
+}
+
+impl RealBackend {
+    fn send_indexer(&self, cmd: IndexerCmd) {
+        if let Some(tx) = &self.indexer_tx {
+            // The host thread only stops on drop or after a failed start (reported as Fatal).
+            let _ = tx.send(cmd);
+        }
+    }
+}
+
+impl Drop for RealBackend {
+    fn drop(&mut self) {
+        self.indexer_tx = None;
+        if let Some(host) = self.indexer_host.take()
+            && host.join().is_err()
+        {
+            tracing::error!("indexer host thread panicked");
+        }
+    }
+}
+
 impl Backend for RealBackend {
     fn submit_job(&self, job: Job) {
-        if let Some(indexer) = &self.indexer {
-            let id = indexer.submit(job);
-            tracing::debug!(?id, "index job submitted");
-        }
+        self.send_indexer(IndexerCmd::Submit(job));
     }
 
     fn cancel_job(&self) {
-        if let Some(indexer) = &self.indexer {
-            indexer.cancel_current();
-        }
+        self.send_indexer(IndexerCmd::Cancel);
     }
 
     fn update_settings(&self, settings: IndexerSettings) {
-        if let Some(indexer) = &self.indexer {
-            indexer.update_settings(settings);
-        }
+        self.send_indexer(IndexerCmd::Settings(settings));
     }
 
     fn search(&self, request: SearchRequest) -> u64 {

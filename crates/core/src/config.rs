@@ -248,7 +248,7 @@ impl Default for UiConfig {
         Self {
             columns: vec![
                 col(ColumnId::Name, 280.0),
-                col(ColumnId::Path, 420.0),
+                col(ColumnId::Path, 380.0),
                 col(ColumnId::Type, 140.0),
                 col(ColumnId::Modified, 150.0),
                 col(ColumnId::Size, 90.0),

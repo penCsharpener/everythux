@@ -47,14 +47,14 @@ are applied while scanning, so an excluded folder is never read.
 | Pattern | Kind | Scope | Why |
 |---------|------|-------|-----|
 | `node_modules` | dir | | JavaScript dependencies |
-| `.var` | dir | `/home/*` | Flatpak app data |
-| `.cache` | dir | `/home/*` | User caches |
+| `.var` | dir | `{/home/*,/root}` | Flatpak app data |
+| `.cache` | dir | `{/home/*,/root}` | User caches |
 | `__pycache__` | dir | | Python bytecode |
 | `.venv` | dir | | Python virtual environments |
-| `target` | dir | `/home/*` | Rust build output |
-| `obj` | dir | `/home/*` | .NET and C build output |
-| `bin` | dir | `/home/*` | .NET build output |
-| `/proc`, `/sys`, `/dev`, `/run`, `/tmp` | path | | Virtual and temporary filesystems |
+| `target` | dir | `{/home/*,/root}` | Rust build output |
+| `obj` | dir | `{/home/*,/root}` | .NET and C build output |
+| `bin` | dir | `{/home/*,/root}` | .NET build output |
+| `/proc`, `/sys`, `/dev`, `/tmp` | path | | Virtual and temporary filesystems (no `/run` rule: removable disks mount under `/run/media`) |
 | `/var/lib/docker`, `/var/lib/containers` | path | | Container storage |
 | `lost+found` | dir | | ext4 recovery folder |
 
@@ -63,7 +63,7 @@ All of them can be edited, disabled or deleted. `everythux-cli config reset --ye
 ## Scoping pitfalls
 
 - **`bin` without a scope removes `/usr/bin`, `/bin` and every other folder of that name.** That is why the
-  default `bin`, `obj`, `target`, `.cache` and `.var` rules are scoped to `/home/*`. Keep the scope when you
+  default `bin`, `obj`, `target`, `.cache` and `.var` rules are scoped to `{/home/*,/root}` (every home directory plus root's). Keep the scope when you
   add similar rules for names that also exist in the system.
 - `/home/*` does not match `/home` itself or other mount points. If your home is elsewhere (for example
   `/data/home`), scope to that: `/data/home/*`.

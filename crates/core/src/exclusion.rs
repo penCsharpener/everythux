@@ -85,22 +85,26 @@ impl ExclusionRule {
     }
 }
 
+/// Scope of the home-directory defaults: every user's home plus root's.
+pub const HOME_SCOPE: &str = "{/home/*,/root}";
+
 /// The rules shipped by default. `obj`, `bin` and `.var` are scoped to home directories, because
-/// excluding `bin` globally would drop `/usr/bin`.
+/// excluding `bin` globally would drop `/usr/bin`. There is deliberately no `/run` rule: removable
+/// disks are mounted under `/run/media/<user>/…` and must stay indexable (the tmpfs at `/run` itself
+/// is a separate filesystem the walker never enters).
 pub fn default_rules() -> Vec<ExclusionRule> {
     vec![
         ExclusionRule::new("node_modules", RuleKind::Dir),
-        ExclusionRule::new(".var", RuleKind::Dir).scoped("/home/*"),
-        ExclusionRule::new(".cache", RuleKind::Dir).scoped("/home/*"),
+        ExclusionRule::new(".var", RuleKind::Dir).scoped(HOME_SCOPE),
+        ExclusionRule::new(".cache", RuleKind::Dir).scoped(HOME_SCOPE),
         ExclusionRule::new("__pycache__", RuleKind::Dir),
         ExclusionRule::new(".venv", RuleKind::Dir),
-        ExclusionRule::new("target", RuleKind::Dir).scoped("/home/*"),
-        ExclusionRule::new("obj", RuleKind::Dir).scoped("/home/*"),
-        ExclusionRule::new("bin", RuleKind::Dir).scoped("/home/*"),
+        ExclusionRule::new("target", RuleKind::Dir).scoped(HOME_SCOPE),
+        ExclusionRule::new("obj", RuleKind::Dir).scoped(HOME_SCOPE),
+        ExclusionRule::new("bin", RuleKind::Dir).scoped(HOME_SCOPE),
         ExclusionRule::new("/proc", RuleKind::Path),
         ExclusionRule::new("/sys", RuleKind::Path),
         ExclusionRule::new("/dev", RuleKind::Path),
-        ExclusionRule::new("/run", RuleKind::Path),
         ExclusionRule::new("/tmp", RuleKind::Path),
         ExclusionRule::new("/var/lib/docker", RuleKind::Path),
         ExclusionRule::new("/var/lib/containers", RuleKind::Path),
@@ -424,8 +428,11 @@ mod tests {
         assert!(!s.is_excluded(Path::new("/usr/bin"), true));
         assert!(!s.is_excluded(Path::new("/usr/lib/obj"), true));
         assert!(s.is_excluded(Path::new("/home/me/.var"), true));
+        assert!(s.is_excluded(Path::new("/root/.cache"), true));
+        assert!(!s.is_excluded(Path::new("/var/cache/.cache"), true));
         assert!(s.is_excluded(Path::new("/home/me/src/app/node_modules"), true));
         assert!(s.is_excluded(Path::new("/proc/1/status"), false));
+        assert!(!s.is_excluded(Path::new("/run/media/me/usb/photo.jpg"), false));
     }
 
     #[test]

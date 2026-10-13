@@ -6,10 +6,11 @@ the SQLite schema, the JSON config format and the phase plan. Keep it up to date
 
 ## Status
 
-Planning stage. No code exists yet. Work follows the roadmap phases in order (Phase 0 = workspace, CI,
-config crate). When you finish a roadmap task, tick its checkbox in `ROADMAP.md` in the same commit.
+v0.1 to v0.4 of the roadmap are implemented. The open items are listed in the "Implementation status"
+section at the top of `ROADMAP.md`. When you finish a roadmap task, tick its checkbox in `ROADMAP.md`
+in the same commit.
 
-## Workspace layout (target)
+## Workspace layout
 
 ```
 crates/core      domain types, config (JSON), exclusion rules, errors
@@ -29,7 +30,8 @@ Dependency direction: `app`/`cli` â†’ `search`, `index`, `platform`, `preview` â
 ```sh
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+dbus-run-session -- cargo test --workspace --all-features   # D-Bus mock tests need a session bus
+cargo test --workspace --all-features -- --ignored        # root-only: loop-mounted ext4, D-Bus
 cargo bench -p everythux-search          # criterion benches (perf-sensitive changes)
 cargo deny check                         # licenses + advisories
 cargo run -p everythux-app               # the UI

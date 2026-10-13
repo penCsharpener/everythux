@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Install runtime tools used by tests (D-Bus session bus, preview helpers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus poppler-utils ffmpeg
+      # The D-Bus tests start a mock org.freedesktop.FileManager1 on a private session bus.
+      - name: Unit and integration tests
+        run: dbus-run-session -- cargo nextest run --workspace --all-features
+      - name: Doc tests
+        run: cargo test --workspace --all-features --doc
+
+  # Real ext4 images: loop mounts and fanotify need root. Tests are marked
+  # #[ignore = "needs root: ..."] and run only here.
+  integration-root:
+    name: integration (root, ext4 loop mount)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus e2fsprogs poppler-utils ffmpeg
+      # Build as the normal user so target/ isn't root-owned (the cache step runs as that user).
+      - name: Build test binaries
+        run: cargo nextest run --workspace --all-features --run-ignored only --no-run
+      - name: Run the root-only tests
+        run: |
+          sudo -E env "PATH=$PATH" dbus-run-session -- \
+            cargo nextest run --workspace --all-features --run-ignored only --no-fail-fast
+
+  doc:
+    name: rustdoc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps --all-features
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check

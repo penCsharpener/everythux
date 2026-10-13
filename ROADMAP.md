@@ -6,6 +6,21 @@ This document plans the work from an empty repository to a 1.0 release. It cover
 the architecture, the data model, the phases in build order (each with tasks and
 acceptance criteria), and the risks and open questions.
 
+## Implementation status (2026-10-13)
+
+Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
+Still open, in rough priority order:
+
+- **Incremental RAM-index patching** (Phase 7): every index change reloads the whole snapshot, so on
+  multi-million-entry indexes live updates show up seconds late instead of within 1 s (Phase 9 target).
+- **Privileged fanotify helper** (Phase 9): only the inotify user mode exists.
+- **SQLite search fallback + FTS5 benchmark gate / ADR** (Phase 3): the in-memory engine meets the
+  latency targets (≈8 ms substring query on 2M entries), so this is documentation work.
+- Preview extras: syntax highlighting, PDF paging, audio playback (needs ALSA at build time).
+- `follow_symlinks` is accepted in the config but symlinks are never followed.
+- Manual file-manager test checklist, extra columns, search history/bookmarks, drag-and-drop, tray icon,
+  `.rpm`/AppImage/Flatpak packaging, changelog automation.
+
 ---
 
 ## 1. Goals and non-goals
@@ -218,7 +233,7 @@ hot-reloaded.
   "ui": {
     "columns": [
       { "id": "name", "width": 280, "visible": true },
-      { "id": "path", "width": 420, "visible": true },
+      { "id": "path", "width": 380, "visible": true },
       { "id": "type", "width": 140, "visible": true },
       { "id": "modified", "width": 150, "visible": true },
       { "id": "size", "width": 90, "visible": true }
@@ -260,40 +275,40 @@ Rough sizes assume one developer working part-time (about 10–15 h/week). **v0.
 usable release and covers R1–R7 and R12.
 
 ### Phase 0: Foundations *(≈1 week)*
-- [ ] Cargo workspace with the crates above, `rust-toolchain.toml` (stable), `rustfmt`, `clippy -D warnings`.
-- [ ] CI on GitHub Actions: build, test, clippy, `cargo deny` (licenses/advisories), cache.
-- [ ] `core::config`: typed `Config` struct, load/save JSON with atomic writes, defaults, versioned migration,
+- [x] Cargo workspace with the crates above, `rust-toolchain.toml` (stable), `rustfmt`, `clippy -D warnings`.
+- [x] CI on GitHub Actions: build, test, clippy, `cargo deny` (licenses/advisories), cache.
+- [x] `core::config`: typed `Config` struct, load/save JSON with atomic writes, defaults, versioned migration,
       and validation errors shown to the user instead of panics.
-- [ ] XDG paths through `directories`. `tracing` logs to `$XDG_STATE_HOME/everythux/everythux.log`.
-- [ ] Error type strategy: `thiserror` in libraries, `anyhow` in binaries.
+- [x] XDG paths through `directories`. `tracing` logs to `$XDG_STATE_HOME/everythux/everythux.log`.
+- [x] Error type strategy: `thiserror` in libraries, `anyhow` in binaries.
 
 **Done when:** `cargo test` is green in CI, and `config.json` round-trips and survives unknown or missing fields.
 
 ### Phase 1: Volume discovery and scanner *(≈2 weeks)* covers R1
-- [ ] Parse `/proc/self/mountinfo`, filter `fstype == ext4`, and resolve the filesystem UUID
+- [x] Parse `/proc/self/mountinfo`, filter `fstype == ext4`, and resolve the filesystem UUID
       (`/dev/disk/by-uuid` symlinks, or `libblkid` through FFI if needed).
-- [ ] **Dedupe bind mounts:** index each `(device, fs root)` pair once, at its shortest mount point.
-- [ ] One-filesystem traversal: never cross `st_dev` boundaries. Nested mounts get their own volume.
-- [ ] Parallel walker (`jwalk`) with:
+- [x] **Dedupe bind mounts:** index each `(device, fs root)` pair once, at its shortest mount point.
+- [x] One-filesystem traversal: never cross `st_dev` boundaries. Nested mounts get their own volume.
+- [x] Parallel walker (own `rayon` + `rustix` `getdents64`/`statat` walker; `jwalk` was not needed) with:
   - exclusion pruning *before* descending (a `node_modules` folder is never read),
   - `lstat` semantics, so symlinks are not followed by default,
   - permission errors counted and logged per volume, not fatal,
   - cancellation token and progress reporting (dirs/s, entries, current path).
-- [ ] Bounded channel to the writer, so the walker can't outrun SQLite and use unbounded RAM.
-- [ ] Benchmark harness: a synthetic tree generator (1M files, 100k dirs) plus `criterion` benches.
+- [x] Bounded channel to the writer, so the walker can't outrun SQLite and use unbounded RAM.
+- [x] Benchmark harness: a synthetic tree generator (1M files, 100k dirs) plus `criterion` benches.
 
 **Done when:** `everythux-cli scan --dry-run` lists all mounted ext4 volumes and walks them, with throughput
 of at least 50k entries/s on SSD (warm cache).
 
 ### Phase 2: SQLite store *(≈1.5 weeks)* covers R4
-- [ ] Schema plus migration runner. WAL mode, prepared statements, a single writer thread.
-- [ ] **Bulk-load path for full scans:** write into `index.db.building` with secondary indexes dropped,
+- [x] Schema plus migration runner. WAL mode, prepared statements, a single writer thread.
+- [x] **Bulk-load path for full scans:** write into `index.db.building` with secondary indexes dropped,
       insert in transactions of about 10k rows, build the indexes at the end, compute `dirs.total_size`
       bottom-up, `ANALYZE`, then atomically rename over `index.db`. The UI keeps searching the old index
       until the swap.
-- [ ] **Subtree replace path** for partial scans: `DELETE` the subtree and insert fresh rows in one transaction.
-- [ ] Integrity: `PRAGMA quick_check` on startup. If it fails, offer a rebuild.
-- [ ] `everythux-cli stats` prints entry counts, DB size and last scan per volume.
+- [x] **Subtree replace path** for partial scans: `DELETE` the subtree and insert fresh rows in one transaction.
+- [x] Integrity: `PRAGMA quick_check` on startup. If it fails, offer a rebuild.
+- [x] `everythux-cli stats` prints entry counts, DB size and last scan per volume.
 
 **Done when:** a 1M-entry index builds in under 60 s end-to-end, the DB is about 150 B/entry, and killing the
 process mid-scan leaves the previous index intact.
@@ -304,12 +319,12 @@ process mid-scan leaves the previous index intact.
   - `MemSearch`: struct-of-arrays loaded from SQLite (one contiguous `Vec<u8>` of folded names plus
     offsets, along with `dir_id`, `size`, `mtime`, `kind` and `ext_id` arrays). Matching runs in parallel
     with `rayon` and `memchr::memmem`.
-- [ ] **Pre-sorted permutations** for each sortable column (name, path, type, size, modified). The result
+- [x] **Pre-sorted permutations** for each sortable column (name, path, type, size, modified). The result
   set is a bitset, and sorted output comes from walking the permutation and keeping matches. Clicking a
   column header re-sorts in O(n) with no per-query sort. This is how Everything does it.
-- [ ] Query cancellation: each keystroke bumps a generation counter, stale queries stop early, and input
+- [x] Query cancellation: each keystroke bumps a generation counter, stale queries stop early, and input
   is debounced by about 30 ms.
-- [ ] Basic syntax: space means AND, `|` means OR, `!` means NOT, `"quoted phrase"`, `*`/`?` wildcards,
+- [x] Basic syntax: space means AND, `|` means OR, `!` means NOT, `"quoted phrase"`, `*`/`?` wildcards,
   and a case-sensitivity toggle.
 - [ ] **Benchmark gate:** compare `MemSearch` against SQLite FTS5 (`tokenize='trigram'`) on 2M entries for
   latency, RAM and DB size. Document the result in `docs/adr/0001-search-engine.md` and choose the default.
@@ -317,82 +332,82 @@ process mid-scan leaves the previous index intact.
 **Done when:** p95 latency from keystroke to first page is under 50 ms on 2M entries, and RAM stays under 300 MB.
 
 ### Phase 4: UI MVP *(≈2 weeks)* covers R2, R3
-- [ ] eframe window: search box (focused on start), result table, status bar
+- [x] eframe window: search box (focused on start), result table, status bar
       ("1,234 of 2,345,678 objects · indexing /home 43%").
-- [ ] Virtualised table (`TableBuilder::body().rows(row_h, n, …)`), with only visible rows materialised from
+- [x] Virtualised table (`TableBuilder::body().rows(row_h, n, …)`), with only visible rows materialised from
       the engine.
-- [ ] Columns **Name | Path | Type | Date Modified | Size**: resizable, sortable by header click, with an
+- [x] Columns **Name | Path | Type | Date Modified | Size**: resizable, sortable by header click, with an
       ascending/descending indicator. Visibility and widths are saved to JSON.
-- [ ] File-type icons by MIME category (a small embedded icon set; freedesktop icon theme lookup comes later).
-- [ ] Human-readable sizes (binary or SI, configurable) and locale-aware dates (`chrono`).
-- [ ] Keyboard navigation: arrows, PageUp/PageDown, Home/End, Enter opens, `Ctrl+C` copies the full path,
+- [x] File-type icons by MIME category (a small embedded icon set; freedesktop icon theme lookup comes later).
+- [x] Human-readable sizes (binary or SI, configurable) and locale-aware dates (`chrono`).
+- [x] Keyboard navigation: arrows, PageUp/PageDown, Home/End, Enter opens, `Ctrl+C` copies the full path,
       `Ctrl+Shift+C` copies the folder.
-- [ ] Right-click context menu: Open, Open containing folder, Copy path, Copy name, Properties,
+- [x] Right-click context menu: Open, Open containing folder, Copy path, Copy name, Properties,
       Exclude…, Re-index this folder.
-- [ ] Light/dark theme following the system preference.
-- [ ] Remember window size and position.
+- [x] Light/dark theme following the system preference.
+- [x] Remember window size and position.
 
 **Done when:** scrolling 2M results stays at 60 fps, and every column sorts in under 100 ms.
 
 ### Phase 5: Core interactions *(≈1 week)* covers R5, R6, R7. **Release v0.1**
-- [ ] **`Ctrl+Shift+R` triggers a full reindex.** It is consumed globally before widgets, so the search
+- [x] **`Ctrl+Shift+R` triggers a full reindex.** It is consumed globally before widgets, so the search
       box doesn't swallow it. It runs in the background with progress and cancel in the status bar, and the
       old index stays searchable until the atomic swap (Phase 2). Pressing it again while running asks
       "Restart reindex?".
-- [ ] **Double-click on a Path cell opens the folder with the file selected.**
+- [x] **Double-click on a Path cell opens the folder with the file selected.**
   1. D-Bus `org.freedesktop.FileManager1.ShowItems([file://…], startup_id)` through `zbus`.
   2. In a Flatpak/sandbox, `org.freedesktop.portal.OpenURI.OpenDirectory`.
   3. Otherwise, `xdg-open <parent dir>` (opens the folder, but nothing is selected).
-- [ ] **Double-click on a Size or Modified cell opens the folder's properties.**
+- [x] **Double-click on a Size or Modified cell opens the folder's properties.**
   1. D-Bus `org.freedesktop.FileManager1.ShowItemProperties([file://<folder>], startup_id)`.
   2. If no file manager implements it, a **built-in Properties dialog** shows path, size (from
      `dirs.total_size`), file/folder counts from the index, owner, permissions, and mtime/ctime.
      It also has "Open folder" and "Re-index" buttons.
-- [ ] Double-click on a **Name** cell opens the file with its default application, the same as Everything
+- [x] Double-click on a **Name** cell opens the file with its default application, the same as Everything
       (`xdg-open` or the portal `OpenFile`).
-- [ ] A per-cell hit test decides which action runs, using `ui.interact` on each cell rect.
+- [x] A per-cell hit test decides which action runs, using `ui.interact` on each cell rect.
 - [ ] Integration tests against Nautilus, Dolphin, Nemo and Thunar, with a manual checklist in `docs/testing.md`.
 
 **Done when:** all three double-click behaviours work on GNOME and KDE, and fall back gracefully elsewhere.
 
 ### Phase 6: Exclusions *(≈1.5 weeks)* covers R9, R10. **v0.2**
-- [ ] **Rule model** (`core::exclusion`):
+- [x] **Rule model** (`core::exclusion`):
   - `kind`: `dir` (matches folder names anywhere), `file`, `path` (an exact subtree), or `any`.
   - `pattern`: glob (`node_modules`, `*.o`, `**/target/debug`, `/home/*/.cache`) or `re:<regex>`.
   - `scope`: optional glob limiting where the rule applies (for example, `bin` only under `/home/*`).
   - `enabled`: true/false.
-- [ ] Compile all rules into one `GlobSet` and one `RegexSet` for fast matching, and apply them **during the walk**.
-- [ ] **Shipped defaults** (enabled, editable): `node_modules`, `.var` (Flatpak data, `~/.var`),
+- [x] Compile all rules into one `GlobSet` and one `RegexSet` for fast matching, and apply them **during the walk**.
+- [x] **Shipped defaults** (enabled, editable): `node_modules`, `.var` (Flatpak data, `~/.var`),
       `.cache`, `__pycache__`, `.venv`, `target`, plus `obj` and `bin` **scoped to `/home/*`**. Scoping
       matters: excluding `bin` globally would remove `/usr/bin`. The editor warns when a rule would exclude
       more than N% of the current index.
-- [ ] **`Ctrl+Shift+Left-click` on a Path cell** adds a `path` rule for that folder *immediately* and opens the
+- [x] **`Ctrl+Shift+Left-click` on a Path cell** adds a `path` rule for that folder *immediately* and opens the
       **Exclusion popup** next to the cursor, prefilled. It lets you:
   - switch between "this exact folder", "any folder named `<name>`", "any folder named `<name>` under `<scope>`" and a custom glob,
   - see a **live preview**: "matches 12,345 indexed entries in 87 folders",
   - choose between *Remove matching entries from index now* (default) and *Keep until next rescan*,
   - **Undo** (removes the rule) or **Open full exclusion editor**.
-- [ ] **Exclusion editor window** (Settings → Exclusions): table of rules with enable checkboxes,
+- [x] **Exclusion editor window** (Settings → Exclusions): table of rules with enable checkboxes,
       add/edit/delete/reorder, a test box ("is `/home/me/proj/bin/x` excluded? by which rule?"),
       and import/export.
-- [ ] Removing an exclusion offers to **re-index only the affected subtrees** (this uses Phase 7).
-- [ ] Every change is persisted to `config.json` immediately.
+- [x] Removing an exclusion offers to **re-index only the affected subtrees** (this uses Phase 7).
+- [x] Every change is persisted to `config.json` immediately.
 
 **Done when:** after adding `node_modules`, matching entries disappear from results in under 1 s without a
 full rescan, and the rule survives restarts.
 
 ### Phase 7: Partial index updates *(≈1.5 weeks)* covers R11. **v0.2**
-- [ ] **Re-index one volume:** from the context menu, *Index → Volumes*, or
+- [x] **Re-index one volume:** from the context menu, *Index → Volumes*, or
       `everythux-cli reindex --volume <uuid|mountpoint>`.
-- [ ] **Re-index one folder (subtree):** from the context menu on any row or the folder Properties dialog, or
+- [x] **Re-index one folder (subtree):** from the context menu on any row or the folder Properties dialog, or
       `everythux-cli reindex --path /home/me/projects`.
-- [ ] **Quick rescan mode:** ext4 updates a directory's mtime whenever entries are added, removed or renamed.
+- [x] **Quick rescan mode:** ext4 updates a directory's mtime whenever entries are added, removed or renamed.
       The quick mode re-lists only directories whose `mtime` changed since the last scan, so updating after a
       day away takes seconds. Full mode also catches size/mtime changes to files inside unchanged folders.
-- [ ] Startup policy: `rescan_on_startup` is `none`, `quick` or `full`. `scheduled_rescan_minutes` sets periodic quick rescans.
-- [ ] **Volumes panel:** lists all ext4 partitions (from udisks2 over D-Bus), with mounted/unmounted state,
+- [x] Startup policy: `rescan_on_startup` is `none`, `quick` or `full`. `scheduled_rescan_minutes` sets periodic quick rescans.
+- [x] **Volumes panel:** lists all ext4 partitions (from udisks2 over D-Bus), with mounted/unmounted state,
       last scan, entry count, enable/disable toggle, and "Mount and index" for unmounted ones.
-- [ ] **Offline volumes:** entries of an unmounted or removed disk stay in the index, greyed out with a
+- [x] **Offline volumes:** entries of an unmounted or removed disk stay in the index, greyed out with a
       volume badge, keyed by filesystem UUID. They come back online when the disk is mounted again, even at a
       different path.
 - [ ] The RAM index applies subtree patches incrementally instead of doing a full reload.
@@ -413,8 +428,8 @@ and runs on a worker thread with an LRU cache, so the UI never blocks.
 | Video (mp4/mkv/webm/avi) | Thumbnail at 10% duration via `ffmpegthumbnailer`/`ffmpeg` CLI (if installed) or the D-Bus thumbnailer `org.freedesktop.thumbnails.Thumbnailer1`. Metadata via `ffprobe`. A "Play" button opens the default player | Medium |
 | Inline video playback | GStreamer (`gstreamer-rs`) rendering to an egui texture | Hard (post-1.0) |
 
-- [ ] Large-file guards: no preview over a configurable size, and decoding is cancelled when selection changes.
-- [ ] Degrades cleanly: when a dependency is missing, the pane shows metadata only, plus an "Install X for previews" hint.
+- [x] Large-file guards: no preview over a configurable size, and decoding is cancelled when selection changes.
+- [x] Degrades cleanly: when a dependency is missing, the pane shows metadata only, plus an "Install X for previews" hint.
 
 **Done when:** previews for images, PDFs and audio appear within 150 ms of selection on typical files, with no UI jank.
 
@@ -426,29 +441,29 @@ Keeps the index fresh without rescans.
       changes to the app over a Unix socket.
   - Security: the daemon serves **metadata only**. Results are filtered by the requesting user's
     read/execute permission on the containing folder, so private filenames don't leak to other users.
-- [ ] **User mode (fallback):** `inotify` on selected roots (for example `$HOME`), using the `notify` crate, with
+- [x] **User mode (fallback):** `inotify` on selected roots (for example `$HOME`), using the `notify` crate, with
       a watch-count budget. Anything not covered by watches gets periodic quick rescans.
-- [ ] Event coalescing (100–500 ms), with rename pairing via cookie or FID.
-- [ ] Overflow handling (`IN_Q_OVERFLOW` / `FAN_Q_OVERFLOW`) triggers a quick rescan of the affected volume.
+- [x] Event coalescing (100–500 ms), with rename pairing via cookie or FID.
+- [x] Overflow handling (`IN_Q_OVERFLOW` / `FAN_Q_OVERFLOW`) triggers a quick rescan of the affected volume.
 
 **Done when:** a file created anywhere on an indexed ext4 volume appears in results within 1 s.
 
 ### Phase 10: Power search and polish *(≈2 weeks)*
-- [ ] Everything-style filters: `ext:pdf;docx`, `size:>100mb`, `size:1mb..10mb`, `dm:today`,
+- [x] Everything-style filters: `ext:pdf;docx`, `size:>100mb`, `size:1mb..10mb`, `dm:today`,
       `dm:lastweek`, `dm:2026-01-01..2026-03-01`, `path:src`, `folder:`, `file:`, `regex:`, `case:`, `vol:home`.
-- [ ] Toggle to match against the full path, not just the name (`Ctrl+U`).
+- [x] Toggle to match against the full path, not just the name (`Ctrl+U`).
 - [ ] Optional extra columns: Owner, Permissions, Date Created (ext4 stores `crtime`, read via `statx`), Extension.
 - [ ] Search history, saved searches/bookmarks, and quick filter buttons (Audio, Video, Documents, Pictures, Folders).
 - [ ] Multi-select operations: copy paths, open, and drag-and-drop paths into other apps.
-- [ ] `everythux-cli search <query> [--json]` for scripting (like Everything's `es.exe`).
+- [x] `everythux-cli search <query> [--json]` for scripting (like Everything's `es.exe`).
 - [ ] Optional tray icon and single-instance with a global "show window" hotkey (portal `GlobalShortcuts` on Wayland).
 
 ### Phase 11: Packaging and release *(≈1–2 weeks)* **v1.0**
-- [ ] `.desktop` file, icon set, AppStream metainfo.
+- [x] `.desktop` file, icon set, AppStream metainfo.
 - [ ] Packages: `.deb` (`cargo-deb`), `.rpm` (`cargo-generate-rpm`), AUR `PKGBUILD`, static tarball, AppImage.
 - [ ] Flatpak: documented with caveats. The sandbox needs `--filesystem=host:ro`, and fanotify is unavailable there.
 - [ ] Release automation: tagging, changelog (`git-cliff`), GitHub Releases with checksums.
-- [ ] User docs: search syntax, shortcuts, exclusions guide, troubleshooting.
+- [x] User docs: search syntax, shortcuts, exclusions guide, troubleshooting.
 
 ### Phase 12: Stretch goals (post-1.0)
 - **Raw ext4 indexing:** read inode tables and directory blocks directly from the block device (like Everything

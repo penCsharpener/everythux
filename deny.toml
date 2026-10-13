@@ -40,7 +40,8 @@ allow = [
 
 [bans]
 multiple-versions = "warn"
-wildcards = "warn" # workspace path deps have no version and the crates lack `publish = false`
+wildcards = "deny"
+allow-wildcard-paths = true # workspace path deps (all crates are publish = false)
 deny = []
 
 [sources]
