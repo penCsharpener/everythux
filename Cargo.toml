@@ -89,5 +89,11 @@ debug = "line-tables-only"
 inherits = "release"
 debug = true
 
+# Published binaries (release workflow, .deb): release settings without debug info.
+[profile.dist]
+inherits = "release"
+debug = false
+strip = true
+
 [profile.dev.package."*"]
 opt-level = 2

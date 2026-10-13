@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # rust-toolchain.toml pins the exact version; this only bootstraps rustup.
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -40,13 +41,13 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Build release binaries
-        run: cargo build --release --locked -p everythux-app -p everythux-cli
+        run: cargo build --profile dist --locked -p everythux-app -p everythux-cli
 
       - name: Package tarball
         run: |
           name="everythux-${VERSION}-${TARGET}"
           mkdir -p "dist/$name"
-          cp target/release/everythux target/release/everythux-cli "dist/$name/"
+          cp target/dist/everythux target/dist/everythux-cli "dist/$name/"
           cp -r packaging docs README.md "dist/$name/"
           for f in LICENSE LICENSE-MIT LICENSE-APACHE; do
             if [ -e "$f" ]; then cp "$f" "dist/$name/"; fi
@@ -56,7 +57,7 @@ jobs:
       # Metadata ([package.metadata.deb]) lives in crates/app/Cargo.toml. The CLI binary is part of
       # another package, which is why the workspace is built first and cargo-deb gets --no-build.
       - name: Package .deb
-        run: cargo deb -p everythux-app --no-build --output dist/
+        run: cargo deb -p everythux-app --profile dist --no-build --output dist/
 
       - name: Checksums
         working-directory: dist
