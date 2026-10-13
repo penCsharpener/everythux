@@ -66,6 +66,10 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"  # `index::IndexError` reads fine
 must_use_candidate = "allow"       # too noisy. Add #[must_use] by hand where ignoring is a bug
 missing_errors_doc = "allow"       # enforced in review for public APIs instead
+missing_panics_doc = "allow"       # same
+cast_possible_truncation = "allow" # u32 ids / u64->i64 timestamps are pervasive and bounded
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"      # display-only float maths (sizes, percentages)
 # restriction lints we want:
 unwrap_used = "warn"               # allowed in tests via clippy.toml (below)
 dbg_macro = "warn"
@@ -104,6 +108,7 @@ Member crates can't override individual lints when they use `[lints] workspace =
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-print-in-tests = true
+doc-valid-idents = ["SQLite", "FileManager1", "UDisks2", "DBus", "PipeWire", "GStreamer", "OpenURI", "XDG", ".."]
 ```
 
 `rustfmt.toml` stays minimal: `edition = "2024"` and `max_width = 110`. Don't add nightly-only options.
