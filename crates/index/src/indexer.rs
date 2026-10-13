@@ -1,17 +1,26 @@
 //! The background indexer: a worker thread that runs [`Job`]s one at a time, owns the single
 //! SQLite writer and publishes fresh [`IndexSnapshot`]s.
 
+mod jobs;
+mod shared;
+mod worker;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
-use crossbeam_channel::Receiver;
-use everythux_core::config::{IndexerConfig, VolumesConfig};
+use crossbeam_channel::{Receiver, unbounded};
+use everythux_core::config::{IndexerConfig, StartupRescan, VolumesConfig};
 use everythux_core::exclusion::ExclusionRule;
 use everythux_core::model::VolumeInfo;
 use everythux_core::snapshot::IndexSnapshot;
 
+use self::shared::Shared;
+use self::worker::{Worker, compile_lenient};
 use crate::IndexError;
+use crate::store::Store;
+use crate::walker::make_pool;
 
 /// How thoroughly to rescan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -143,7 +152,8 @@ pub struct IndexerSettings {
 /// Handle to the background indexer thread. Dropping it shuts the thread down.
 #[derive(Debug)]
 pub struct Indexer {
-    _private: (),
+    shared: Arc<Shared>,
+    worker: Option<JoinHandle<()>>,
 }
 
 impl Indexer {
@@ -151,34 +161,95 @@ impl Indexer {
     /// plus the event stream. Immediately emits `SnapshotReady` with the stored index (possibly
     /// empty) and `VolumesChanged`, then runs `settings.indexer.rescan_on_startup` (an empty
     /// database always gets a full scan). Starts the inotify watcher if `live_updates` is on.
+    ///
+    /// Every job emits `Started`, throttled `Progress`, and one of `Finished` / `Cancelled` /
+    /// `Failed`; a job that changed data publishes `SnapshotReady` *before* its `Finished`.
+    /// Live-update jobs (`Job::RefreshDirs`) are rate limited: their snapshot may follow later.
+    ///
+    /// # Errors
+    /// Opening the database can fail: [`IndexError::Corrupt`] (offer to rebuild, see
+    /// [`Store::delete_database`]), [`IndexError::SchemaTooNew`], I/O or SQLite errors.
     pub fn start(
         db_path: &Path,
         settings: IndexerSettings,
     ) -> Result<(Self, Receiver<IndexEvent>), IndexError> {
-        let _ = (db_path, settings);
-        todo!("Phase 1-2")
+        let store = Store::open(db_path)?;
+        let shared = Arc::new(Shared::new());
+
+        // Queued before the thread starts, so the startup scan precedes anything the caller submits.
+        let startup = if store.is_empty()? {
+            Some(Job::FullReindex)
+        } else {
+            match settings.indexer.rescan_on_startup {
+                StartupRescan::None => None,
+                StartupRescan::Quick => Some(Job::RescanAll(ScanMode::Quick)),
+                StartupRescan::Full => Some(Job::RescanAll(ScanMode::Full)),
+            }
+        };
+        if let Some(job) = startup {
+            shared.submit(job);
+        }
+
+        let (events, receiver) = unbounded();
+        let now = Instant::now();
+        let worker = Worker {
+            shared: Arc::clone(&shared),
+            store,
+            events,
+            exclusions: compile_lenient(&settings.exclusions),
+            pool: make_pool(settings.indexer.threads),
+            settings,
+            watcher: None,
+            volumes_sent: Vec::new(),
+            dirty: false,
+            last_publish: now,
+            last_load: Duration::ZERO,
+            last_scheduled: now,
+        };
+        let handle = std::thread::Builder::new()
+            .name("everythux-indexer".to_owned())
+            .spawn(move || worker.run())
+            .map_err(|e| IndexError::io(db_path, e))?;
+        Ok((
+            Self {
+                shared,
+                worker: Some(handle),
+            },
+            receiver,
+        ))
     }
 
     /// Queues a job; jobs run one at a time in submission order. A `FullReindex` submitted while
-    /// another `FullReindex` is queued or running is coalesced.
+    /// another `FullReindex` is queued or running is coalesced (the existing id is returned).
+    /// Consecutive queued `RefreshDirs` jobs are merged.
     pub fn submit(&self, job: Job) -> JobId {
-        let _ = job;
-        todo!()
+        self.shared.submit(job)
     }
 
     /// Cancels the running job (if any). Queued jobs stay queued.
     pub fn cancel_current(&self) {
-        todo!()
+        self.shared.cancel_current();
     }
 
-    /// Replaces volume selection / exclusions / behaviour for subsequent jobs.
+    /// Replaces volume selection / exclusions / behaviour for subsequent jobs. Invalid exclusion
+    /// rules are logged and skipped.
     pub fn update_settings(&self, settings: IndexerSettings) {
-        let _ = settings;
-        todo!()
+        self.shared.update_settings(settings);
     }
 
-    /// The most recently published snapshot.
+    /// The most recently published snapshot (empty until the first `SnapshotReady`).
     pub fn snapshot(&self) -> Arc<IndexSnapshot> {
-        todo!()
+        self.shared.snapshot()
+    }
+}
+
+impl Drop for Indexer {
+    fn drop(&mut self) {
+        self.shared.shutdown();
+        if let Some(handle) = self.worker.take()
+            && handle.join().is_err()
+        {
+            tracing::error!("indexer thread panicked");
+        }
     }
 }

@@ -15,7 +15,7 @@ pub mod watch;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
-pub use discovery::{DiscoveredVolume, discover_volumes};
+pub use discovery::{DiscoveredVolume, MountInfoLine, discover_volumes, parse_mountinfo};
 pub use error::IndexError;
 pub use indexer::{IndexEvent, Indexer, IndexerSettings, Job, JobId, JobStats, Progress, ScanMode};
-pub use store::{Store, StoreStats};
+pub use store::{ApplyStats, DirRef, Rebuild, Store, StoreStats, Update};

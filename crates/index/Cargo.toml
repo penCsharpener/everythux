@@ -14,18 +14,29 @@ test-utils = ["dep:tempfile"]
 [dependencies]
 everythux-core.workspace = true
 crossbeam-channel.workspace = true
-jwalk.workspace = true
 rayon.workspace = true
 rusqlite.workspace = true
-rustix.workspace = true
+# `event` for poll/eventfd in the inotify watcher.
+rustix = { workspace = true, features = ["event"] }
 tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+everythux-index = { path = ".", features = ["test-utils"] }
 proptest.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "walk"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "store"
+harness = false
+required-features = ["test-utils"]
 
 [lints]
 workspace = true
