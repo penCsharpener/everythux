@@ -18,3 +18,10 @@ pub enum PlatformError {
     #[error("not supported on this desktop: {0}")]
     Unsupported(&'static str),
 }
+
+impl PlatformError {
+    /// Wraps any D-Bus related error (connection, call, (de)serialization).
+    pub(crate) fn dbus(err: impl std::fmt::Display) -> Self {
+        Self::DBus(err.to_string())
+    }
+}
