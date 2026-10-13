@@ -5,12 +5,32 @@
 //! All work happens on [`PreviewService`]'s worker thread with an LRU cache; a new request
 //! cancels the previous one.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crossbeam_channel::Receiver;
-
+#[cfg(feature = "audio")]
+mod audio;
+mod cache;
+mod cancel;
+mod env;
+mod error;
+#[cfg(feature = "image")]
+mod images;
+mod kind;
+#[cfg(feature = "pdf")]
+mod pdf;
+mod render;
+mod service;
+mod textfile;
 pub mod thumbnails;
+#[cfg(any(feature = "pdf", feature = "video"))]
+mod tools;
+#[cfg(feature = "video")]
+mod video;
+
+pub use service::PreviewService;
 
 /// Decoded RGBA8 image, already downscaled to fit the requested box.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,31 +135,5 @@ impl Default for PreviewLimits {
             max_file_size: 512 * 1024 * 1024,
             max_dim: 768,
         }
-    }
-}
-
-/// Background preview worker.
-#[derive(Debug)]
-pub struct PreviewService {
-    _private: (),
-}
-
-impl PreviewService {
-    /// Starts the worker.
-    pub fn start(limits: PreviewLimits) -> (Self, Receiver<PreviewResult>) {
-        let _ = limits;
-        todo!("Phase 8")
-    }
-
-    /// Requests a preview of `path` (cancels the previous request). Returns the request id.
-    pub fn request(&self, path: PathBuf) -> u64 {
-        let _ = path;
-        todo!()
-    }
-
-    /// Updates limits for later requests.
-    pub fn set_limits(&self, limits: PreviewLimits) {
-        let _ = limits;
-        todo!()
     }
 }

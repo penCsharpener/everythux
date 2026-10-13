@@ -10,11 +10,11 @@ repository.workspace = true
 [features]
 default = ["image", "audio", "pdf", "video"]
 image = ["dep:image"]
-audio = ["dep:lofty"]
+audio = ["dep:lofty", "image"]
 # PDF via `pdftoppm` (poppler-utils) at runtime.
 pdf = ["image"]
 # Video thumbnails via `ffmpegthumbnailer`/`ffmpeg` and metadata via `ffprobe` at runtime.
-video = ["image"]
+video = ["image", "dep:serde_json", "dep:tempfile"]
 
 [dependencies]
 everythux-core.workspace = true
@@ -23,10 +23,13 @@ image = { workspace = true, optional = true }
 lofty = { workspace = true, optional = true }
 md-5.workspace = true
 percent-encoding.workspace = true
+serde_json = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+image.workspace = true
 tempfile.workspace = true
 
 [lints]
