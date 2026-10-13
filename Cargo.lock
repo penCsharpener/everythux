@@ -1388,7 +1388,6 @@ name = "everythux-platform"
 version = "0.1.0"
 dependencies = [
  "everythux-core",
- "md-5",
  "mime_guess",
  "percent-encoding",
  "tempfile",
@@ -1403,9 +1402,10 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "everythux-core",
- "everythux-platform",
  "image",
  "lofty",
+ "md-5",
+ "percent-encoding",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",

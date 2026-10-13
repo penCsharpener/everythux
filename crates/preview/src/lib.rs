@@ -1,6 +1,7 @@
 //! Preview providers for the optional preview pane (ROADMAP Phase 8).
 //!
 //! UI-toolkit agnostic: produces RGBA pixels / text / metadata; the app turns them into textures.
+//! [`thumbnails::find_cached`] looks up the freedesktop thumbnail cache.
 //! All work happens on [`PreviewService`]'s worker thread with an LRU cache; a new request
 //! cancels the previous one.
 
@@ -8,6 +9,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crossbeam_channel::Receiver;
+
+pub mod thumbnails;
 
 /// Decoded RGBA8 image, already downscaled to fit the requested box.
 #[derive(Debug, Clone, PartialEq, Eq)]

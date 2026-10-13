@@ -9,7 +9,6 @@ repository.workspace = true
 
 [dependencies]
 everythux-core.workspace = true
-md-5.workspace = true
 mime_guess.workspace = true
 percent-encoding.workspace = true
 thiserror.workspace = true

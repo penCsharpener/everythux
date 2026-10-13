@@ -5,12 +5,10 @@
 //! - [`uri`]: `file://` URIs from raw (possibly non-UTF-8) paths.
 //! - [`mime`]: human-readable file type names for the Type column.
 //! - [`udisks`]: block devices (including unmounted ext4 partitions) and mounting via UDisks2.
-//! - [`thumbnails`]: lookup in the freedesktop thumbnail cache.
 
 mod error;
 pub mod file_manager;
 pub mod mime;
-pub mod thumbnails;
 pub mod udisks;
 pub mod uri;
 
