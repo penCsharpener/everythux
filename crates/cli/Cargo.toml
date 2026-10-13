@@ -1,0 +1,29 @@
+[package]
+name = "everythux-cli"
+description = "Headless command-line interface for everythux (scan, reindex, search, stats, exclusions)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "everythux-cli"
+path = "src/main.rs"
+
+[dependencies]
+everythux-core.workspace = true
+everythux-index.workspace = true
+everythux-search.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+crossbeam-channel.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

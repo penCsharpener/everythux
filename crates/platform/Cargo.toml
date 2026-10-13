@@ -1,0 +1,23 @@
+[package]
+name = "everythux-platform"
+description = "Desktop integration for everythux: file manager D-Bus, xdg-open, portals, udisks2, MIME, thumbnails"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+everythux-core.workspace = true
+md-5.workspace = true
+mime_guess.workspace = true
+percent-encoding.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

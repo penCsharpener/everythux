@@ -1,0 +1,32 @@
+[package]
+name = "everythux-preview"
+description = "Preview providers (image, text, PDF, audio, video) for everythux"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["image", "audio", "pdf", "video"]
+image = ["dep:image"]
+audio = ["dep:lofty"]
+# PDF via `pdftoppm` (poppler-utils) at runtime.
+pdf = ["image"]
+# Video thumbnails via `ffmpegthumbnailer`/`ffmpeg` and metadata via `ffprobe` at runtime.
+video = ["image"]
+
+[dependencies]
+everythux-core.workspace = true
+everythux-platform.workspace = true
+crossbeam-channel.workspace = true
+image = { workspace = true, optional = true }
+lofty = { workspace = true, optional = true }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

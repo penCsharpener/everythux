@@ -1,0 +1,93 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/penCsharpener/everythux"
+
+[workspace.dependencies]
+everythux-core = { path = "crates/core" }
+everythux-index = { path = "crates/index" }
+everythux-search = { path = "crates/search" }
+everythux-platform = { path = "crates/platform" }
+everythux-preview = { path = "crates/preview" }
+
+anyhow = "1.0.104"
+arc-swap = "1.9.2"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.6.7", features = ["derive"] }
+crossbeam-channel = "0.5.17"
+directories = "6.0.0"
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "persistence"] }
+egui = "0.36.2"
+egui_extras = { version = "0.36.2", default-features = false }
+egui_kittest = "0.36.2"
+fixedbitset = "0.5.7"
+globset = "0.4.20"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico"] }
+jwalk = "0.9.0"
+lofty = "0.25.4"
+md-5 = "0.11.0"
+memchr = "2.8.3"
+mime_guess = "2.0.5"
+percent-encoding = "2.3.2"
+rayon = "1.12.0"
+regex = "1.13.1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+rustix = { version = "1.1.5", features = ["fs", "process"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+zbus = { version = "5.19.0", default-features = false, features = ["blocking-api", "async-io"] }
+
+# dev
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+proptest = "1.12.0"
+tempfile = "3.27.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# pedantic opt-outs
+module_name_repetitions = "allow"   # `index::IndexError` reads fine
+must_use_candidate = "allow"        # noisy; add #[must_use] by hand where ignoring is a bug
+missing_errors_doc = "allow"        # enforced in review for public APIs
+missing_panics_doc = "allow"        # same
+cast_possible_truncation = "allow"  # u32 ids / u64->i64 timestamps are pervasive and bounded
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"       # display-only float maths (sizes, percentages)
+# restriction lints we want
+unwrap_used = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "warn"
+allow_attributes = "warn"
+rc_buffer = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+debug = "line-tables-only"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.dev.package."*"]
+opt-level = 2
