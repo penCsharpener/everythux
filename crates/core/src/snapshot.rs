@@ -11,11 +11,17 @@ use crate::ids::{DirId, EntryId, VolumeId};
 use crate::model::{EntryKind, VolumeInfo};
 
 /// Many byte strings stored back to back: `bytes[offsets[i]..offsets[i + 1]]` is string `i`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ByteArena {
     bytes: Vec<u8>,
     /// `len() + 1` offsets; always starts with `0`.
     offsets: Vec<u32>,
+}
+
+impl Default for ByteArena {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ByteArena {
@@ -233,6 +239,16 @@ impl IndexSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_arena_is_usable() {
+        let mut a = ByteArena::default();
+        a.push(b"x");
+        assert_eq!(a.get(0), b"x");
+        let mut snap = IndexSnapshot::empty();
+        snap.entries.names.push(b"y");
+        assert_eq!(snap.entries.names.get(0), b"y");
+    }
 
     #[test]
     fn arena_roundtrip() {
