@@ -346,7 +346,7 @@ garbage line
             Path::new("/opt/data disk"),
             "\\040 is a space"
         );
-        assert!(lines[1].optional_fields.is_empty());
+        assert_eq!(lines[1].optional_fields, [] as [String; 0]);
         assert_eq!(lines[3].optional_fields, ["master:3", "shared:7"]);
         assert_eq!(lines[5].source, "/dev/disk/by\\path", "\\134 is a backslash");
     }
@@ -387,13 +387,16 @@ garbage line
         );
 
         let none = select_mounts(&lines, &fs(&["ext4"]), |_| false);
-        assert!(none.is_empty());
+        assert_eq!(none, [] as [&MountInfoLine; 0]);
     }
 
     #[test]
     fn filters_by_fs_type() {
         let lines = parse_mountinfo(SAMPLE);
-        assert!(select_mounts(&lines, &fs(&["btrfs"]), |_| true).is_empty());
+        assert_eq!(
+            select_mounts(&lines, &fs(&["btrfs"]), |_| true),
+            [] as [&MountInfoLine; 0]
+        );
         let tmp = select_mounts(&lines, &fs(&["tmpfs"]), |_| true);
         assert_eq!(tmp.len(), 1);
         assert_eq!(tmp[0].mount_point, Path::new("/tmp"));
@@ -435,7 +438,10 @@ garbage line
             disabled_uuids: vec![found[0].fs_uuid.clone()],
             ..config
         };
-        assert!(discover_from(&disabled, &[], &DiskIds::default()).is_empty());
+        assert_eq!(
+            discover_from(&disabled, &[], &DiskIds::default()),
+            [] as [DiscoveredVolume; 0]
+        );
     }
 
     #[test]

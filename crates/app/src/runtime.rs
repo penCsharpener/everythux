@@ -134,6 +134,6 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let (config, warnings) = load_config(&AppPaths::in_dir(dir.path()));
         assert_eq!(config, Config::default());
-        assert!(warnings.is_empty());
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 }

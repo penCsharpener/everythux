@@ -268,7 +268,7 @@ mod tests {
         let parsed = parse_objects(&objects, &types(&["ext4"]));
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].device, PathBuf::from("/dev/sdb1"));
-        assert!(parsed[0].mount_points.is_empty());
+        assert_eq!(parsed[0].mount_points, [] as [PathBuf; 0]);
         assert_eq!(parsed[0].fs_uuid.as_deref(), Some("1234-abcd"));
         assert_eq!(parsed[0].label.as_deref(), Some("Data"));
         assert_eq!(parsed[0].size, 1 << 30);
@@ -304,7 +304,10 @@ mod tests {
             all.iter().map(|d| d.object_path.as_str()).collect::<Vec<_>>(),
             ["/a", "/e"]
         );
-        assert!(parse_objects(&objects, &types(&["btrfs"])).is_empty());
+        assert_eq!(
+            parse_objects(&objects, &types(&["btrfs"])),
+            [] as [BlockDevice; 0]
+        );
     }
 
     #[test]

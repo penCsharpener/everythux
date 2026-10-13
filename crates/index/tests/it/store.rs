@@ -70,7 +70,10 @@ fn fresh_database_is_empty_and_reopens() {
         let store = Store::open(&db).unwrap();
         assert!(store.is_empty().unwrap());
         assert_eq!(store.stats().unwrap().entries, 0);
-        assert!(store.volumes().unwrap().is_empty());
+        assert_eq!(
+            store.volumes().unwrap(),
+            [] as [everythux_core::model::VolumeInfo; 0]
+        );
         let snap = store.load_snapshot().unwrap();
         assert!(snap.is_empty());
         assert_eq!(&*snap.extensions[0], "");

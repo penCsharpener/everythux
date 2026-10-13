@@ -196,7 +196,7 @@ mod tests {
         t.app.drive_preview(&ctx);
         t.app.now = 51.0;
         t.app.drive_preview(&ctx);
-        assert!(preview_calls(&t).is_empty());
+        assert!(preview_calls(&t).is_empty(), "{:?}", preview_calls(&t));
     }
 
     #[test]
@@ -265,12 +265,10 @@ mod tests {
             cover: Some(rgba(1, 1)),
         };
         assert_eq!(images_of(&content).len(), 1);
-        assert!(
-            images_of(&PreviewContent::Text {
-                text: String::new(),
-                truncated: false
-            })
-            .is_empty()
-        );
+        let text = PreviewContent::Text {
+            text: String::new(),
+            truncated: false,
+        };
+        assert_eq!(images_of(&text).len(), 0, "text previews carry no images");
     }
 }

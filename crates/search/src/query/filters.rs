@@ -296,6 +296,6 @@ mod tests {
         let exts = |s| parse_ext(s).iter().map(ToString::to_string).collect::<Vec<_>>();
         assert_eq!(exts("pdf;DOCX"), ["pdf", "docx"]);
         assert_eq!(exts(".jpg;;jpg, png"), ["jpg", "png"]);
-        assert!(exts(";").is_empty());
+        assert_eq!(exts(";"), [] as [String; 0]);
     }
 }

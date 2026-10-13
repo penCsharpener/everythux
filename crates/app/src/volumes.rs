@@ -347,7 +347,7 @@ mod tests {
             result: Err("denied".into()),
         });
         t.pump();
-        assert!(t.fake.jobs().is_empty());
+        assert!(t.fake.jobs().is_empty(), "{:?}", t.fake.jobs());
         assert!(
             t.app
                 .windows
@@ -370,7 +370,11 @@ mod tests {
         t.app.set_volume_enabled("abc", false);
         assert_eq!(t.app.config.volumes.disabled_uuids.len(), 1, "no duplicates");
         t.app.set_volume_enabled("abc", true);
-        assert!(t.app.config.volumes.disabled_uuids.is_empty());
+        assert!(
+            t.app.config.volumes.disabled_uuids.is_empty(),
+            "{:?}",
+            t.app.config.volumes.disabled_uuids
+        );
     }
 
     #[test]

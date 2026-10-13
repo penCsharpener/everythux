@@ -222,6 +222,6 @@ mod tests {
         assert_eq!(t.app.toasts.len(), 1);
         t.app.now = 100.0 + TOAST_SECONDS + 1.0;
         t.app.expire_toasts();
-        assert!(t.app.toasts.is_empty());
+        assert!(t.app.toasts.is_empty(), "{:?}", t.app.toasts);
     }
 }

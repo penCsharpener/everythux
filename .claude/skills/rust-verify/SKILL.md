@@ -96,9 +96,12 @@ opt-level = 2                  # fast deps (egui, image, sqlite) in debug builds
 `rust-toolchain.toml`:
 ```toml
 [toolchain]
-channel = "stable"
+channel = "1.99.0"   # exact version: CI and local get the same lints
 components = ["rustfmt", "clippy"]
 ```
+
+Bump the pinned version deliberately, in its own commit, after fixing whatever new clippy lints it
+brings. A floating `stable` lets CI pick up new lints on its own and go red without a code change.
 
 Member crates can't override individual lints when they use `[lints] workspace = true`. Use a scoped
 `#[expect(...)]` on the module that needs the exception instead.

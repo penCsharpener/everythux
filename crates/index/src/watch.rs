@@ -415,8 +415,8 @@ mod tests {
         let online = [volume(&base, VolumeState::Online)];
         assert_eq!(effective_roots(&config, &online), [base.join("a")]);
         let offline = [volume(&base, VolumeState::Offline)];
-        assert!(effective_roots(&config, &offline).is_empty());
-        assert!(effective_roots(&config, &[]).is_empty());
+        assert_eq!(effective_roots(&config, &offline), [] as [PathBuf; 0]);
+        assert_eq!(effective_roots(&config, &[]), [] as [PathBuf; 0]);
     }
 
     #[test]

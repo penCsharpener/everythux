@@ -324,7 +324,11 @@ mod tests {
         let b = rule("/b", RuleKind::Path);
         let mut b_off = b.clone();
         b_off.enabled = false;
-        assert!(removed_rules(&[a.clone(), b.clone()], &[a.clone(), b.clone()]).is_empty());
+        assert!(
+            removed_rules(&[a.clone(), b.clone()], &[a.clone(), b.clone()]).is_empty(),
+            "{:?}",
+            removed_rules(&[a.clone(), b.clone()], &[a.clone(), b.clone()])
+        );
         assert_eq!(
             removed_rules(&[a.clone(), b.clone()], std::slice::from_ref(&a)),
             vec![b.clone()]
@@ -366,7 +370,7 @@ mod tests {
             vec![Job::RescanAll(ScanMode::Full)],
             "a path glob can't be rescanned as one folder"
         );
-        assert!(reindex_jobs(&[]).is_empty());
+        assert!(reindex_jobs(&[]).is_empty(), "{:?}", reindex_jobs(&[]));
         assert_eq!(
             reindex_jobs(&[rule(&escape_glob("/data/a[1]"), RuleKind::Path)]),
             vec![Job::RescanPath {

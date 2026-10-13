@@ -469,7 +469,7 @@ mod tests {
         );
 
         let mut stream = vec![0u8; 188 * 3];
-        for packet in stream.chunks_exact_mut(188) {
+        for packet in stream.as_chunks_mut::<188>().0 {
             packet[0] = 0x47;
         }
         let mpegts = write(tmp.path(), "clip.ts", &stream);

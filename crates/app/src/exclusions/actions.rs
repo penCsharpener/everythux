@@ -380,7 +380,7 @@ mod tests {
         open_popup(&mut t);
         t.app.windows.exclusion_popup.as_mut().expect("popup").remove_now = false;
         t.app.finish_exclusion_popup();
-        assert!(t.fake.jobs().is_empty());
+        assert!(t.fake.jobs().is_empty(), "{:?}", t.fake.jobs());
         assert!(rules(&t).contains(&ExclusionRule::new("/home/me/proj/node_modules", RuleKind::Path)));
     }
 

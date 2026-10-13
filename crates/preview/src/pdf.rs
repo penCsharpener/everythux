@@ -129,7 +129,7 @@ mod tests {
             assert_eq!(pages, Some(1));
         }
         assert!(
-            page.rgba.chunks_exact(4).any(|px| px[0] < 128),
+            page.rgba.as_chunks::<4>().0.iter().any(|px| px[0] < 128),
             "the text must leave dark pixels on the white page"
         );
     }

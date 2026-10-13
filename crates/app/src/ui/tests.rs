@@ -226,7 +226,11 @@ fn ctrl_shift_click_on_a_path_cell_opens_the_prefilled_exclusion_popup() {
     );
     assert!(r.harness.query_by_label("This folder only").is_some());
     // No file manager action happened.
-    assert!(r.fake.platform_actions().is_empty());
+    assert!(
+        r.fake.platform_actions().is_empty(),
+        "{:?}",
+        r.fake.platform_actions()
+    );
 }
 
 #[test]
