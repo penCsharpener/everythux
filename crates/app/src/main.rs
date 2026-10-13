@@ -1,3 +1,5 @@
-//! Everythux desktop UI (eframe/egui).
+//! Entry point of the `everythux` desktop application.
 
-fn main() {}
+fn main() -> anyhow::Result<()> {
+    everythux_app::run()
+}

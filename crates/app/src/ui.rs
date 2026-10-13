@@ -1,0 +1,13 @@
+//! egui rendering. Each submodule adds `impl App` blocks for one part of the window.
+
+mod exclusion_ui;
+mod icons;
+mod menus;
+mod preview_pane;
+mod search_bar;
+mod status_bar;
+pub(crate) mod table;
+mod windows_ui;
+
+#[cfg(test)]
+mod tests;
