@@ -16,6 +16,7 @@ everythux-core.workspace = true
 everythux-index.workspace = true
 everythux-search.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 crossbeam-channel.workspace = true
 serde_json.workspace = true

@@ -1,0 +1,50 @@
+# cargo-deny configuration: licenses, advisories, banned crates and allowed sources.
+# Run with `cargo deny check` (CI runs it on every push).
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+# Vulnerabilities always fail the check. Unmaintained crates are reported for workspace
+# dependencies only, and yanked releases are denied.
+unmaintained = "workspace"
+yanked = "deny"
+ignore = [
+    # Add "RUSTSEC-YYYY-NNNN" here only with a comment saying why it cannot be fixed yet.
+]
+
+[licenses]
+confidence-threshold = 0.8
+# Keep licenses we expect to meet soon (e.g. when a new dependency is added) without warnings.
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "BSL-1.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn" # workspace path deps have no version and the crates lack `publish = false`
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

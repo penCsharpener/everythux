@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.pencsharpener.Everythux</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <name>Everythux</name>
+  <summary>Instant file search for Linux</summary>
+  <description>
+    <p>
+      Everythux finds files by name as you type. It indexes mounted ext4 volumes into a local
+      SQLite database and searches the whole index in memory, so results appear immediately even
+      with millions of files.
+    </p>
+    <ul>
+      <li>Sortable columns: name, path, type, date modified and size</li>
+      <li>Search operators and filters such as ext:, size: and dm:</li>
+      <li>Exclusion rules with patterns, for example node_modules or build output folders</li>
+      <li>Re-index a single volume or folder, or rebuild everything with Ctrl+Shift+R</li>
+      <li>Open the containing folder with the file selected in your file manager</li>
+      <li>Optional preview pane for images, PDFs, audio and video</li>
+      <li>A command-line tool, everythux-cli, for scripts</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">everythux.desktop</launchable>
+  <provides>
+    <binary>everythux</binary>
+    <binary>everythux-cli</binary>
+  </provides>
+  <categories>
+    <category>Utility</category>
+    <category>FileTools</category>
+    <category>System</category>
+  </categories>
+  <keywords>
+    <keyword>search</keyword>
+    <keyword>find</keyword>
+    <keyword>files</keyword>
+    <keyword>locate</keyword>
+    <keyword>index</keyword>
+  </keywords>
+  <url type="homepage">https://github.com/penCsharpener/everythux</url>
+  <url type="bugtracker">https://github.com/penCsharpener/everythux/issues</url>
+  <developer id="io.github.pencsharpener">
+    <name>penCsharpener</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-13"/>
+  </releases>
+</component>

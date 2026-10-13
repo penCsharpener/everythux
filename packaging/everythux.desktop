@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Everythux
+GenericName=File Search
+Comment=Instant file search for ext4 volumes
+Exec=everythux
+Icon=everythux
+Terminal=false
+Categories=Utility;FileTools;System;
+Keywords=search;find;files;locate;index;everything;
+StartupNotify=true

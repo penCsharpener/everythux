@@ -1,0 +1,28 @@
+# Paste into crates/app/Cargo.toml.
+#
+# Build with:  cargo build --release --locked -p everythux-app -p everythux-cli
+#              cargo deb -p everythux-app --no-build
+#
+# Asset sources that are not under target/ are relative to this crate (crates/app), hence ../../.
+# everythux-cli belongs to another package, so the workspace must be built before packaging.
+
+[package.metadata.deb]
+name = "everythux"
+maintainer = "penCsharpener <noreply@users.noreply.github.com>"
+copyright = "2026, the everythux authors"
+section = "utils"
+priority = "optional"
+extended-description = """\
+Everythux finds files by name as you type. It indexes mounted ext4 volumes into a local \
+SQLite database and searches it in memory. Includes the everythux-cli command-line tool."""
+depends = "$auto"
+recommends = "poppler-utils, ffmpeg, xdg-utils"
+assets = [
+    ["target/release/everythux", "usr/bin/", "755"],
+    ["target/release/everythux-cli", "usr/bin/", "755"],
+    ["../../packaging/everythux.desktop", "usr/share/applications/", "644"],
+    ["../../packaging/everythux.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["../../packaging/io.github.pencsharpener.Everythux.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["../../README.md", "usr/share/doc/everythux/README.md", "644"],
+    ["../../docs/*.md", "usr/share/doc/everythux/", "644"],
+]
