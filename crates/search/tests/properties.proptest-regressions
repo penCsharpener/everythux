@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 17ec101f99ba8cd63a561b7c0ee85849b4815fb324f7b3e495c1af1a7ae81f1b # shrinks to names = ["a"], q = SimpleQuery { groups: [[(true, "a")]] }, case_sensitive = false
+cc 0ad19822ea444d268818dfa606e9deeeee40957a230bcf5f4945968d2a8e7f23 # shrinks to names = ["aé"], pattern = "a", extra = None

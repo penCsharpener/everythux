@@ -11,7 +11,6 @@ repository.workspace = true
 everythux-core.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
-fixedbitset.workspace = true
 memchr.workspace = true
 rayon.workspace = true
 regex.workspace = true
@@ -21,6 +20,10 @@ tracing.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 proptest.workspace = true
+
+[[bench]]
+name = "search"
+harness = false
 
 [lints]
 workspace = true

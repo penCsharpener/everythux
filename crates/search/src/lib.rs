@@ -6,12 +6,19 @@
 //! - [`service`]: [`SearchService`], a background thread that runs the latest query, cancels stale
 //!   ones and swaps snapshots.
 //!
+//! - `synthetic` (hidden): seeded snapshot generator and builder for tests and benchmarks.
+//!
 //! The re-exported items are the contract used by `everythux-app` and `everythux-cli`.
 
+#![forbid(unsafe_code)]
+
 pub mod engine;
+mod matcher;
 pub mod query;
 pub mod service;
+#[doc(hidden)]
+pub mod synthetic;
 
 pub use engine::{SearchIndex, Sort};
-pub use query::{Query, QueryError, QueryOptions, parse};
+pub use query::{Query, QueryError, QueryOptions, parse, parse_at};
 pub use service::{SearchRequest, SearchResults, SearchService};
