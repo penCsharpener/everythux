@@ -3,9 +3,10 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use everythux_preview::{ImageData, PreviewContent, PreviewLimits, PreviewResult};
+use everythux_preview::{ImageData, PreviewContent, PreviewLimits, PreviewResult, TEXT_MORE_BYTES};
 
 use crate::app::App;
+use crate::text_doc::TextDoc;
 
 /// Selection must rest this long before a preview is requested.
 pub(crate) const PREVIEW_DEBOUNCE: f64 = 0.1;
@@ -16,6 +17,9 @@ pub(crate) struct PreviewShown {
     pub(crate) content: PreviewContent,
     /// One handle per image of `content`, in the order of [`images_of`].
     pub(crate) textures: Vec<egui::TextureHandle>,
+    /// For text previews: the text, moved out of `content` (whose `text` is left empty) and
+    /// indexed for rendering. Grows with "Show more".
+    pub(crate) text: Option<TextDoc>,
 }
 
 impl std::fmt::Debug for PreviewShown {
@@ -45,6 +49,10 @@ pub(crate) struct PreviewState {
     pub(crate) pane_rect: Option<egui::Rect>,
     /// Rect covered by the pane's content in the last frame (wider than the pane if it overflowed).
     pub(crate) content_rect: Option<egui::Rect>,
+    /// Id of the "Show more" text request in flight.
+    pub(crate) more_request: Option<u64>,
+    /// Why the last "Show more" failed.
+    pub(crate) more_error: Option<String>,
 }
 
 impl PreviewState {
@@ -115,11 +123,34 @@ impl App {
 
     /// Uploads the textures of a finished preview (once) and replaces the shown one.
     pub(crate) fn on_preview_result(&mut self, result: PreviewResult) {
+        if self.preview.more_request.is_some_and(|id| id == result.request) {
+            self.preview.more_request = None;
+            self.on_more_text(result);
+            return;
+        }
         let current = self.preview.requested.as_ref().map(|(_, id)| *id);
         if current != Some(result.request) {
             return;
         }
-        let textures = images_of(&result.content)
+        let mut content = result.content;
+        let text = match &mut content {
+            PreviewContent::Text {
+                text,
+                encoding,
+                total_bytes,
+                end_offset,
+                ..
+            } => Some(TextDoc::new(
+                std::mem::take(text),
+                *encoding,
+                *total_bytes,
+                *end_offset,
+            )),
+            _ => None,
+        };
+        self.preview.more_request = None;
+        self.preview.more_error = None;
+        let textures = images_of(&content)
             .into_iter()
             .enumerate()
             .filter_map(|(i, image)| {
@@ -133,9 +164,55 @@ impl App {
             .collect();
         self.preview.shown = Some(PreviewShown {
             path: result.path,
-            content: result.content,
+            content,
             textures,
+            text,
         });
+    }
+
+    /// Appends a "Show more" chunk to the shown text.
+    fn on_more_text(&mut self, result: PreviewResult) {
+        let Some(doc) = self
+            .preview
+            .shown
+            .as_mut()
+            .filter(|s| s.path == result.path)
+            .and_then(|s| s.text.as_mut())
+        else {
+            return;
+        };
+        match result.content {
+            PreviewContent::Text {
+                text,
+                total_bytes,
+                end_offset,
+                ..
+            } => doc.append(&text, total_bytes, end_offset),
+            PreviewContent::Unavailable { hint } => self.preview.more_error = Some(hint),
+            other => tracing::debug!(?other, "unexpected answer to a text range request"),
+        }
+    }
+
+    /// "Show more": asks the preview worker for the next chunk of the shown text.
+    pub(crate) fn request_more_text(&mut self) {
+        if self.preview.more_request.is_some() {
+            return;
+        }
+        let Some((path, doc)) = self
+            .preview
+            .shown
+            .as_ref()
+            .and_then(|s| Some((s.path.clone(), s.text.as_ref()?)))
+        else {
+            return;
+        };
+        if !doc.more_available() {
+            return;
+        }
+        let id = self
+            .backend
+            .request_text_range(path, doc.end_offset, TEXT_MORE_BYTES, doc.encoding);
+        self.preview.more_request = Some(id);
     }
 }
 
@@ -273,10 +350,7 @@ mod tests {
             cover: Some(rgba(1, 1)),
         };
         assert_eq!(images_of(&content).len(), 1);
-        let text = PreviewContent::Text {
-            text: String::new(),
-            truncated: false,
-        };
+        let text = PreviewContent::text("");
         assert_eq!(images_of(&text).len(), 0, "text previews carry no images");
     }
 }

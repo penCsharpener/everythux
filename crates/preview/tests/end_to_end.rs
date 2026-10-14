@@ -10,7 +10,10 @@ use std::process::Command;
 use std::time::Duration;
 
 use crossbeam_channel::Receiver;
-use everythux_preview::{PreviewContent, PreviewLimits, PreviewResult, PreviewService};
+use everythux_preview::{
+    PreviewContent, PreviewLimits, PreviewResult, PreviewService, TEXT_HEAD_BYTES, TEXT_MAX_BYTES,
+    TEXT_MORE_BYTES, TextEncoding, more_text_available,
+};
 #[cfg(feature = "image")]
 use image::{ImageFormat, Rgb, RgbImage};
 
@@ -74,15 +77,12 @@ fn text_folder_and_binary() {
     fs::write(&txt, "# Title\nbody\n").expect("write");
     assert_eq!(
         preview(&service, &results, &txt),
-        PreviewContent::Text {
-            text: "# Title\nbody\n".to_owned(),
-            truncated: false
-        }
+        PreviewContent::text("# Title\nbody\n")
     );
 
     let big = tmp.path().join("big.log");
     fs::write(&big, vec![b'x'; 200_000]).expect("write");
-    let PreviewContent::Text { text, truncated } = preview(&service, &results, &big) else {
+    let PreviewContent::Text { text, truncated, .. } = preview(&service, &results, &big) else {
         panic!("expected text");
     };
     assert!(truncated);
@@ -266,4 +266,216 @@ fn only_the_latest_of_many_rapid_requests_is_answered() {
     );
     drop(service);
     assert!(results.recv().is_err(), "nothing after the newest result");
+}
+
+// --- Text previews (v0.5 Phase B) -------------------------------------------------------------
+
+/// Text, encoding, total size and end offset of a text preview.
+fn text_parts(content: PreviewContent) -> (String, TextEncoding, u64, u64) {
+    match content {
+        PreviewContent::Text {
+            text,
+            encoding,
+            total_bytes,
+            end_offset,
+            ..
+        } => (text, encoding, total_bytes, end_offset),
+        other => panic!("expected text, got {other:?}"),
+    }
+}
+
+fn range(
+    service: &PreviewService,
+    results: &Receiver<PreviewResult>,
+    path: &Path,
+    offset: u64,
+    encoding: TextEncoding,
+) -> PreviewContent {
+    let id = service.request_range(path.to_path_buf(), offset, TEXT_MORE_BYTES, encoding);
+    let result = results.recv_timeout(WAIT).expect("a range result");
+    assert_eq!(result.request, id);
+    result.content
+}
+
+#[test]
+fn one_mib_text_previews_the_head_then_ranges_up_to_the_end() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (service, results) = PreviewService::start(PreviewLimits::default());
+    let line = "2026-10-14 12:00:00 INFO request handled in 3 ms — ok\n";
+    let data = line.repeat((1024 * 1024) / line.len() + 1);
+    let path = tmp.path().join("server.log");
+    fs::write(&path, &data).expect("write");
+
+    let (mut text, encoding, total, mut end) = text_parts(preview(&service, &results, &path));
+    assert_eq!(encoding, TextEncoding::Utf8);
+    assert_eq!(total, data.len() as u64);
+    assert!(
+        end <= TEXT_HEAD_BYTES && end > TEXT_HEAD_BYTES - 4,
+        "head ends near 64 KiB: {end}"
+    );
+
+    let mut chunks = 0;
+    while more_text_available(end, total) {
+        let (chunk, chunk_encoding, _, next) = text_parts(range(&service, &results, &path, end, encoding));
+        assert_eq!(chunk_encoding, encoding);
+        assert!(next > end && next - end <= TEXT_MORE_BYTES, "{end} -> {next}");
+        text.push_str(&chunk);
+        end = next;
+        chunks += 1;
+    }
+    assert_eq!(chunks, 4, "1 MiB = 64 KiB head + four 256 KiB chunks");
+    assert_eq!(text, data);
+}
+
+#[test]
+fn ranges_never_read_past_the_cap() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (service, results) = PreviewService::start(PreviewLimits::default());
+    let path = tmp.path().join("huge.log");
+    let size = TEXT_MAX_BYTES + 1024 * 1024;
+    fs::write(&path, vec![b'z'; size as usize]).expect("write");
+
+    let near_cap = TEXT_MAX_BYTES - 1000;
+    let (chunk, _, total, end) = text_parts(range(&service, &results, &path, near_cap, TextEncoding::Utf8));
+    assert_eq!(total, size);
+    assert_eq!((chunk.len(), end), (1000, TEXT_MAX_BYTES), "cut at the cap");
+    assert!(!more_text_available(end, total));
+    assert!(matches!(
+        range(&service, &results, &path, TEXT_MAX_BYTES, TextEncoding::Utf8),
+        PreviewContent::Unavailable { .. }
+    ));
+}
+
+fn utf16(text: &str, little_endian: bool, bom: bool) -> Vec<u8> {
+    let mut out = Vec::new();
+    if bom {
+        out.extend(if little_endian { [0xFF, 0xFE] } else { [0xFE, 0xFF] });
+    }
+    for unit in text.encode_utf16() {
+        out.extend(if little_endian {
+            unit.to_le_bytes()
+        } else {
+            unit.to_be_bytes()
+        });
+    }
+    out
+}
+
+/// Files of the kinds the text preview used to get wrong (ROADMAP-v0.5 Phase B, gaps 1–4),
+/// generated the way the tools that write them do.
+#[test]
+fn regression_fixtures_preview_as_readable_text() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (service, results) = PreviewService::start(PreviewLimits::default());
+    let notes = "Grüße aus Köln — 12 € bezahlt\r\nZeile 2\r\n";
+    let mut utf32 = vec![0xFF, 0xFE, 0, 0];
+    for c in notes.chars() {
+        utf32.extend(u32::from(c).to_le_bytes());
+    }
+    let mut csproj = vec![0xEF, 0xBB, 0xBF];
+    csproj.extend(
+        b"<Project Sdk=\"Microsoft.NET.Sdk\">\r\n  <PropertyGroup>\r\n    \
+          <TargetFramework>net9.0</TargetFramework>\r\n  </PropertyGroup>\r\n</Project>\r\n",
+    );
+    let windows_1252 = b"Gr\xfc\xdfe aus K\xf6ln \x96 12 \x80 bezahlt\r\nZeile 2\r\n".to_vec();
+    let mut log = Vec::new();
+    for i in 0..100_000u32 {
+        log.extend(format!("[{i:08}] worker-{} finished job in {} ms\n", i % 16, i % 997).as_bytes());
+    }
+
+    let cases: Vec<(&str, Vec<u8>, TextEncoding, &str)> = vec![
+        (
+            "powershell-out.txt",
+            utf16(notes, true, true),
+            TextEncoding::Utf16Le,
+            notes,
+        ),
+        (
+            "be-bom.txt",
+            utf16(notes, false, true),
+            TextEncoding::Utf16Be,
+            notes,
+        ),
+        (
+            "le-no-bom.txt",
+            utf16(notes, true, false),
+            TextEncoding::Utf16Le,
+            notes,
+        ),
+        (
+            "be-no-bom.txt",
+            utf16(notes, false, false),
+            TextEncoding::Utf16Be,
+            notes,
+        ),
+        ("wide.txt", utf32, TextEncoding::Utf32Le, notes),
+        (
+            "legacy.txt",
+            windows_1252,
+            TextEncoding::Windows1252,
+            "Grüße aus Köln – 12 € bezahlt",
+        ),
+        (
+            "App.csproj",
+            csproj,
+            TextEncoding::Utf8,
+            "<TargetFramework>net9.0</TargetFramework>",
+        ),
+        (
+            "Dockerfile",
+            b"FROM rust:1.90\nRUN cargo build --release\n".to_vec(),
+            TextEncoding::Utf8,
+            "FROM rust",
+        ),
+        (
+            "Jenkinsfile",
+            b"pipeline { agent any }\n".to_vec(),
+            TextEncoding::Utf8,
+            "pipeline",
+        ),
+        (
+            "LICENSE",
+            "MIT License\n\nCopyright © 2026\n".as_bytes().to_vec(),
+            TextEncoding::Utf8,
+            "Copyright ©",
+        ),
+        // UTF-16 without an extension: the content sniff has to recognise it.
+        ("NOTES", utf16(notes, true, false), TextEncoding::Utf16Le, notes),
+        (
+            "build.log",
+            log,
+            TextEncoding::Utf8,
+            "[00000000] worker-0 finished job in 0 ms",
+        ),
+    ];
+    for (name, bytes, encoding, expected) in cases {
+        let path = tmp.path().join(name);
+        fs::write(&path, &bytes).expect("write");
+        let (text, found, total, _) = text_parts(preview(&service, &results, &path));
+        assert_eq!(found, encoding, "{name}");
+        assert_eq!(total, bytes.len() as u64, "{name}");
+        assert!(text.contains(expected), "{name}: {text:?}");
+        assert!(
+            !text.contains('\u{fffd}'),
+            "{name}: replacement characters in {text:?}"
+        );
+    }
+}
+
+#[test]
+fn binary_files_never_show_as_text() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (service, results) = PreviewService::start(PreviewLimits::default());
+    let elf = b"\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0\x03\0\x3e\0\x01\0\0\0".repeat(50);
+    for name in ["program", "renamed.txt", "data.json"] {
+        let path = tmp.path().join(name);
+        fs::write(&path, &elf).expect("write");
+        assert!(
+            matches!(
+                preview(&service, &results, &path),
+                PreviewContent::Unavailable { .. }
+            ),
+            "{name}"
+        );
+    }
 }

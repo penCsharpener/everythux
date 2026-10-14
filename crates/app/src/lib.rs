@@ -23,6 +23,7 @@ mod runtime;
 mod selection;
 mod status;
 mod tasks;
+mod text_doc;
 mod ui;
 mod volumes;
 

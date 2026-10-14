@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::cancel::Cancel;
 use crate::env::Env;
 use crate::error::PreviewError;
-use crate::kind::{Kind, classify};
+use crate::kind::{Kind, classify_file};
 use crate::{PreviewContent, PreviewLimits, textfile};
 
 /// Folders with more entries than this report exactly this many.
@@ -38,7 +38,8 @@ pub(crate) fn render(
     }
 
     let too_large = meta.len() > limits.max_file_size;
-    let kind = match classify(extension(path).as_deref()) {
+    let name = path.file_name().map_or(&[][..], |n| n.as_bytes());
+    let kind = match classify_file(name) {
         Kind::TypeScriptOrVideo => disambiguate_ts(path),
         kind => kind,
     };
@@ -101,10 +102,6 @@ fn build(
 
 fn unavailable(hint: impl Into<String>) -> PreviewContent {
     PreviewContent::Unavailable { hint: hint.into() }
-}
-
-fn extension(path: &Path) -> Option<String> {
-    everythux_core::text::extension(path.file_name()?.as_bytes()).map(std::borrow::Cow::into_owned)
 }
 
 /// Counts directory entries (capped), checking for cancellation now and then.

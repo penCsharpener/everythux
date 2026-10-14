@@ -1,146 +1,182 @@
-//! Text / source / config previews: the first 64 KiB, lossily decoded.
+//! Text / source / config previews: the head of the file, and further chunks on request, decoded
+//! from whatever encoding [`crate::encoding::detect`] finds.
 
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::PreviewContent;
 use crate::cancel::Cancel;
+use crate::encoding::{self, Strictness, TextEncoding};
 use crate::error::PreviewError;
+use crate::{PreviewContent, TEXT_HEAD_BYTES, TEXT_MAX_BYTES};
 
-/// Maximum number of bytes shown.
-pub(crate) const TEXT_LIMIT: usize = 64 * 1024;
-/// Bytes inspected to decide whether an unknown file is text.
-const SNIFF_LEN: usize = 8 * 1024;
+/// Longest encoded character (UTF-8 and UTF-32: 4 bytes).
+const MAX_CHAR_BYTES: u64 = 4;
 
 /// Reads the head of `path` as text.
 ///
-/// With `sniff`, the file must also look like text (no NUL bytes, mostly valid UTF-8); known text
-/// extensions skip that check.
+/// With `sniff` (unknown file type) the content must look like text; known text extensions are
+/// more lenient (see [`Strictness`]). Binary content is [`PreviewError::NotText`] when sniffing
+/// and [`PreviewError::Binary`] otherwise.
 pub(crate) fn read_text(path: &Path, sniff: bool, cancel: &Cancel) -> Result<PreviewContent, PreviewError> {
     cancel.check()?;
     let mut file = File::open(path)?;
-    let mut buf = Vec::with_capacity(SNIFF_LEN);
-    file.by_ref().take(SNIFF_LEN as u64).read_to_end(&mut buf)?;
-    if sniff && !looks_like_text(&buf) {
-        return Err(PreviewError::NotText);
-    }
-    cancel.check()?;
-    let want = TEXT_LIMIT + 1 - buf.len().min(TEXT_LIMIT + 1);
-    file.take(want as u64).read_to_end(&mut buf)?;
+    let total = file.metadata()?.len();
+    let mut buf = Vec::with_capacity(total.min(TEXT_HEAD_BYTES) as usize);
+    file.by_ref().take(TEXT_HEAD_BYTES).read_to_end(&mut buf)?;
+    let read = buf.len() as u64;
+    let total = total.max(read);
+    let at_eof = read < TEXT_HEAD_BYTES || total == read;
 
-    let truncated = buf.len() > TEXT_LIMIT;
-    if truncated {
-        buf.truncate(TEXT_LIMIT);
-        // Do not end on half a UTF-8 sequence cut by the limit.
-        if let Err(e) = std::str::from_utf8(&buf)
-            && e.error_len().is_none()
-        {
-            buf.truncate(e.valid_up_to());
-        }
-    }
-    let text = String::from_utf8(buf).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-    Ok(PreviewContent::Text { text, truncated })
+    let strictness = if sniff {
+        Strictness::Sniff
+    } else {
+        Strictness::KnownText
+    };
+    let Some(found) = encoding::detect(&buf, at_eof, strictness) else {
+        return Err(if sniff {
+            PreviewError::NotText
+        } else {
+            PreviewError::Binary
+        });
+    };
+    cancel.check()?;
+    let (text, consumed) = encoding::decode(&buf[found.bom_len..], found.encoding, at_eof);
+    Ok(text_content(
+        text,
+        found.encoding,
+        total,
+        (found.bom_len + consumed) as u64,
+    ))
 }
 
-/// Content sniffing on the first bytes of a file: text has no NUL bytes, is mostly valid UTF-8 and
-/// has few control characters.
-pub(crate) fn looks_like_text(head: &[u8]) -> bool {
-    if head.is_empty() {
-        return true;
+/// Reads up to `len` bytes of `path` from `offset` (a previous chunk's `end_offset`) as more text
+/// in `encoding`. Nothing past [`TEXT_MAX_BYTES`] is ever read.
+pub(crate) fn read_range(
+    path: &Path,
+    offset: u64,
+    len: u64,
+    encoding: TextEncoding,
+    cancel: &Cancel,
+) -> Result<PreviewContent, PreviewError> {
+    cancel.check()?;
+    if offset >= TEXT_MAX_BYTES {
+        return Err(PreviewError::TextCap);
     }
-    if head.contains(&0) {
-        return false;
+    let len = len.min(TEXT_MAX_BYTES - offset);
+    let mut file = File::open(path)?;
+    let total = file.metadata()?.len();
+    file.seek(SeekFrom::Start(offset))?;
+    let mut buf = Vec::with_capacity(len.min(total.saturating_sub(offset)) as usize);
+    file.take(len).read_to_end(&mut buf)?;
+    cancel.check()?;
+    let end = offset + buf.len() as u64;
+    let total = total.max(end);
+    // At the cap the rest is never read, so a character cut there is decoded (as U+FFFD) rather
+    // than kept for a chunk that will not come.
+    let at_eof = end >= total || end >= TEXT_MAX_BYTES;
+    let (text, consumed) = encoding::decode(&buf, encoding, at_eof);
+    Ok(text_content(text, encoding, total, offset + consumed as u64))
+}
+
+fn text_content(text: String, encoding: TextEncoding, total_bytes: u64, end_offset: u64) -> PreviewContent {
+    PreviewContent::Text {
+        text,
+        truncated: end_offset < total_bytes,
+        encoding,
+        total_bytes,
+        end_offset,
     }
-    let cut_at_sniff_boundary = head.len() == SNIFF_LEN;
-    let mut invalid = 0usize;
-    let mut chunks = head.utf8_chunks().peekable();
-    while let Some(chunk) = chunks.next() {
-        let tail = chunk.invalid();
-        // A multi-byte character split by the sniff window is not corruption.
-        let split_tail = cut_at_sniff_boundary && chunks.peek().is_none() && tail.len() < 4;
-        if !split_tail {
-            invalid += tail.len();
-        }
-    }
-    let control = head
-        .iter()
-        .filter(|&&b| b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r' | 0x0c | 0x1b))
-        .count();
-    invalid * 10 <= head.len() && control * 20 <= head.len()
+}
+
+/// Whether a text preview that ends at `end_offset` of a `total_bytes` file can be extended with
+/// [`crate::PreviewService::request_range`] (more of the file exists and the cap is not reached).
+pub fn more_text_available(end_offset: u64, total_bytes: u64) -> bool {
+    end_offset < total_bytes && end_offset + MAX_CHAR_BYTES <= TEXT_MAX_BYTES
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
 
     use super::*;
 
-    fn read(dir: &Path, name: &str, bytes: &[u8], sniff: bool) -> Result<PreviewContent, PreviewError> {
+    fn write(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
         let path = dir.join(name);
         fs::write(&path, bytes).expect("write");
-        read_text(&path, sniff, &Cancel::never())
+        path
+    }
+
+    fn read(dir: &Path, name: &str, bytes: &[u8], sniff: bool) -> Result<PreviewContent, PreviewError> {
+        read_text(&write(dir, name, bytes), sniff, &Cancel::never())
+    }
+
+    fn text_of(content: PreviewContent) -> (String, bool, TextEncoding, u64, u64) {
+        match content {
+            PreviewContent::Text {
+                text,
+                truncated,
+                encoding,
+                total_bytes,
+                end_offset,
+            } => (text, truncated, encoding, total_bytes, end_offset),
+            other => panic!("expected text, got {other:?}"),
+        }
     }
 
     #[test]
-    fn small_file_is_not_truncated() {
+    fn small_file_is_complete() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let content = read(tmp.path(), "a.txt", "héllo\nwörld\n".as_bytes(), false).expect("text");
-        assert_eq!(
-            content,
-            PreviewContent::Text {
-                text: "héllo\nwörld\n".to_owned(),
-                truncated: false
-            }
-        );
+        assert_eq!(content, PreviewContent::text("héllo\nwörld\n"));
     }
 
     #[test]
-    fn large_file_is_cut_at_64_kib() {
+    fn large_file_is_cut_at_the_head_size() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let big = vec![b'a'; TEXT_LIMIT + 10];
-        let PreviewContent::Text { text, truncated } =
-            read(tmp.path(), "big.log", &big, false).expect("text")
-        else {
-            panic!("expected text");
-        };
+        let head = TEXT_HEAD_BYTES as usize;
+        let big = vec![b'a'; head + 10];
+        let (text, truncated, _, total, end) =
+            text_of(read(tmp.path(), "big.log", &big, false).expect("text"));
         assert!(truncated);
-        assert_eq!(text.len(), TEXT_LIMIT);
+        assert_eq!((text.len(), total, end), (head, head as u64 + 10, head as u64));
 
-        let exact = vec![b'a'; TEXT_LIMIT];
-        let PreviewContent::Text { truncated, .. } =
-            read(tmp.path(), "exact.log", &exact, false).expect("text")
-        else {
-            panic!("expected text");
-        };
-        assert!(!truncated, "a file of exactly the limit is complete");
+        let exact = vec![b'a'; head];
+        let (_, truncated, ..) = text_of(read(tmp.path(), "exact.log", &exact, false).expect("text"));
+        assert!(!truncated, "a file of exactly the head size is complete");
     }
 
     #[test]
     fn cut_inside_a_multibyte_char_does_not_add_replacement_char() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        // "ä" is two bytes; make the 64 KiB boundary fall in the middle of one.
-        let mut data = vec![b'a'; TEXT_LIMIT - 1];
+        let head = TEXT_HEAD_BYTES as usize;
+        // "ä" is two bytes; make the head boundary fall in the middle of one.
+        let mut data = vec![b'a'; head - 1];
         data.extend("ä".as_bytes());
         data.extend(b"more");
-        let PreviewContent::Text { text, truncated } = read(tmp.path(), "u.txt", &data, false).expect("text")
-        else {
-            panic!("expected text");
-        };
+        let path = write(tmp.path(), "u.txt", &data);
+        let (text, truncated, encoding, _, end) =
+            text_of(read_text(&path, false, &Cancel::never()).expect("text"));
         assert!(truncated);
         assert!(!text.contains('\u{fffd}'));
-        assert_eq!(text.len(), TEXT_LIMIT - 1);
+        assert_eq!(text.len(), head - 1);
+        assert_eq!(end, head as u64 - 1, "the next chunk starts at the cut character");
+        let (rest, truncated, ..) =
+            text_of(read_range(&path, end, 1024, encoding, &Cancel::never()).expect("range"));
+        assert_eq!(rest, "ämore");
+        assert!(!truncated);
     }
 
     #[test]
-    fn invalid_utf8_is_replaced() {
+    fn latin1_text_is_decoded_as_windows_1252() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let PreviewContent::Text { text, .. } =
-            read(tmp.path(), "l1.txt", b"caf\xe9 au lait", false).expect("text")
-        else {
-            panic!("expected text");
-        };
-        assert_eq!(text, "caf\u{fffd} au lait");
+        let (text, _, encoding, ..) =
+            text_of(read(tmp.path(), "l1.txt", b"caf\xe9 au lait", false).expect("text"));
+        assert_eq!(
+            (text.as_str(), encoding),
+            ("café au lait", TextEncoding::Windows1252)
+        );
     }
 
     #[test]
@@ -166,10 +202,67 @@ mod tests {
     }
 
     #[test]
-    fn sniffing_tolerates_a_character_split_by_the_window() {
-        let mut data = vec![b'a'; SNIFF_LEN - 1];
-        data.extend(&"€".as_bytes()[..1]); // first byte of a 3-byte char at the window edge
-        assert_eq!(data.len(), SNIFF_LEN);
-        assert!(looks_like_text(&data));
+    fn binary_with_a_text_extension_is_reported_as_binary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let elf = b"\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0\x03\0\x3e\0\x01\0\0\0";
+        assert!(matches!(
+            read(tmp.path(), "renamed.txt", elf, false),
+            Err(PreviewError::Binary)
+        ));
+    }
+
+    #[test]
+    fn ranges_continue_where_the_previous_chunk_ended() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let line = "0123456789abcdef\n";
+        let data = line.repeat(10_000); // 170 000 bytes
+        let path = write(tmp.path(), "r.log", data.as_bytes());
+        let (head, _, encoding, total, mut end) =
+            text_of(read_text(&path, false, &Cancel::never()).expect("head"));
+        assert_eq!(total, data.len() as u64);
+        let mut all = head;
+        while more_text_available(end, total) {
+            let (chunk, _, _, _, next) =
+                text_of(read_range(&path, end, 50_000, encoding, &Cancel::never()).expect("range"));
+            assert!(next > end, "progress");
+            all.push_str(&chunk);
+            end = next;
+        }
+        assert_eq!(all, data);
+    }
+
+    #[test]
+    fn utf16_ranges_never_split_a_code_unit() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let text: String = "zß😀\n".repeat(30_000);
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in text.encode_utf16() {
+            bytes.extend(unit.to_le_bytes());
+        }
+        let path = write(tmp.path(), "w.txt", &bytes);
+        let (mut all, _, encoding, total, mut end) =
+            text_of(read_text(&path, false, &Cancel::never()).expect("head"));
+        assert_eq!(encoding, TextEncoding::Utf16Le);
+        while more_text_available(end, total) {
+            // An odd length forces cuts inside code units and surrogate pairs.
+            let (chunk, _, _, _, next) =
+                text_of(read_range(&path, end, 77_777, encoding, &Cancel::never()).expect("range"));
+            all.push_str(&chunk);
+            end = next;
+        }
+        assert_eq!(all, text);
+    }
+
+    #[test]
+    fn ranges_stop_at_the_cap() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = write(tmp.path(), "small.txt", b"abc");
+        assert!(matches!(
+            read_range(&path, TEXT_MAX_BYTES, 10, TextEncoding::Utf8, &Cancel::never()),
+            Err(PreviewError::TextCap)
+        ));
+        assert!(more_text_available(TEXT_MAX_BYTES - 100, TEXT_MAX_BYTES * 2));
+        assert!(!more_text_available(TEXT_MAX_BYTES - 2, TEXT_MAX_BYTES * 2));
+        assert!(!more_text_available(10, 10));
     }
 }

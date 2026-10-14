@@ -39,6 +39,12 @@ pub(crate) enum PreviewError {
     /// Not text (binary content without a preview).
     #[error("binary file")]
     NotText,
+    /// A file with a text extension or name whose content is binary.
+    #[error("binary file")]
+    Binary,
+    /// A text range past [`crate::TEXT_MAX_BYTES`] was requested.
+    #[error("text previews stop at 8 MiB")]
+    TextCap,
 }
 
 impl PreviewError {
@@ -58,6 +64,8 @@ impl PreviewError {
             #[cfg(any(feature = "pdf", feature = "video"))]
             Self::Timeout { tool } => format!("Preview timed out ({tool})"),
             Self::NotText => "No preview available for this file type".to_owned(),
+            Self::Binary => "Binary file".to_owned(),
+            Self::TextCap => format!("Text previews stop at {}", human_bytes(crate::TEXT_MAX_BYTES)),
             other => other.to_string(),
         }
     }

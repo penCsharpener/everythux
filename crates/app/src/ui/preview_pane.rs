@@ -8,7 +8,7 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use egui::containers::panel::PanelState;
-use egui::{Align, Label, Layout, RichText, ScrollArea, Ui, Vec2};
+use egui::{Align, Label, Layout, RichText, Ui, Vec2};
 use everythux_preview::{MediaMeta, PreviewContent};
 
 use crate::app::{App, Effect, PopupId};
@@ -123,14 +123,8 @@ fn show_content(ui: &mut Ui, shown: &PreviewShown) {
                 ui.weak(format!("{pages} page(s), showing page 1"));
             }
         }
-        PreviewContent::Text { text, truncated } => {
-            ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                ui.add(Label::new(RichText::new(text).monospace()).selectable(true));
-                if *truncated {
-                    ui.weak("… (truncated)");
-                }
-            });
-        }
+        // Drawn by `App::text_preview` from `PreviewShown::text`.
+        PreviewContent::Text { .. } => {}
         PreviewContent::Audio { meta, .. } | PreviewContent::Video { meta, .. } => {
             show_image(ui, shown, 0);
             ui.add_space(4.0);
@@ -249,6 +243,7 @@ impl App {
             .as_ref()
             .filter(|s| Some(&s.path) == self.preview.wanted.as_ref());
         match current {
+            Some(shown) if shown.text.is_some() => self.text_preview(ui),
             Some(shown) => show_content(ui, shown),
             None => {
                 ui.horizontal(|ui| {

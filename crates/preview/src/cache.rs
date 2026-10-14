@@ -124,10 +124,7 @@ mod tests {
     }
 
     fn text(s: &str) -> PreviewContent {
-        PreviewContent::Text {
-            text: s.to_owned(),
-            truncated: false,
-        }
+        PreviewContent::text(s)
     }
 
     #[test]

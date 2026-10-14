@@ -23,7 +23,7 @@ use everythux_platform::PlatformError;
 use everythux_platform::file_manager::Method;
 use everythux_platform::mime::Category;
 use everythux_platform::udisks::BlockDevice;
-use everythux_preview::{PreviewLimits, PreviewResult};
+use everythux_preview::{PreviewLimits, PreviewResult, TextEncoding};
 use everythux_search::{SearchRequest, SearchResults};
 
 use crate::model::{PropTarget, PropertiesInfo};
@@ -145,6 +145,10 @@ pub(crate) trait Backend {
     fn set_snapshot(&self, snapshot: Arc<IndexSnapshot>);
     /// Requests a preview; returns the request id. Starts the preview service on first use.
     fn request_preview(&self, path: PathBuf, limits: PreviewLimits) -> u64;
+    /// Requests `len` more bytes of text of `path` from `offset`, decoded as `encoding` ("Show
+    /// more" under a text preview); the chunk arrives as [`BackendEvent::Preview`] with the
+    /// returned request id. Like a preview request, it supersedes the one in flight.
+    fn request_text_range(&self, path: PathBuf, offset: u64, len: u64, encoding: TextEncoding) -> u64;
     /// Runs a desktop action; the outcome arrives as [`BackendEvent::Platform`].
     fn platform(&self, action: PlatformAction);
     /// Asks UDisks2 for filesystems of these types; arrives as [`BackendEvent::Devices`].

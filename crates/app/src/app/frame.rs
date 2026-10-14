@@ -47,7 +47,8 @@ impl App {
         let text_focused = ctx.egui_wants_keyboard_input();
         let search_focused = ctx.memory(|m| m.has_focus(search_id()));
         let popup_open = ctx.any_popup_open() || egui::Popup::is_any_open(ctx);
-        let has_selection = !self.selection.is_empty();
+        // Ctrl+C copies selected preview text instead of paths (the text view handles it).
+        let has_selection = !self.selection.is_empty() && !self.preview_text_selected();
         // While the rename editor is open, typed keys belong to it: only Ctrl+Shift+R and Ctrl+Q
         // stay global, and the editor consumes Enter, Tab and Escape itself.
         let editing = self.rename.is_some();

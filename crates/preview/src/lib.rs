@@ -14,6 +14,7 @@ use std::time::Duration;
 mod audio;
 mod cache;
 mod cancel;
+mod encoding;
 mod env;
 mod error;
 #[cfg(feature = "image")]
@@ -30,7 +31,16 @@ mod tools;
 #[cfg(feature = "video")]
 mod video;
 
+pub use encoding::TextEncoding;
 pub use service::PreviewService;
+pub use textfile::more_text_available;
+
+/// Bytes of a text file shown at first.
+pub const TEXT_HEAD_BYTES: u64 = 64 * 1024;
+/// Bytes one "Show more" adds ([`PreviewService::request_range`]).
+pub const TEXT_MORE_BYTES: u64 = 256 * 1024;
+/// Text previews never read past this many bytes of a file.
+pub const TEXT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Decoded RGBA8 image, already downscaled to fit the requested box.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,12 +79,19 @@ pub enum PreviewContent {
         /// Original dimensions, if known.
         original_size: Option<(u32, u32)>,
     },
-    /// Text / source code (first 64 KiB, lossily decoded).
+    /// Text / source code: the first [`TEXT_HEAD_BYTES`] of the file, or the chunk asked for
+    /// with [`PreviewService::request_range`], decoded to UTF-8.
     Text {
-        /// Content.
+        /// Content. Invalid sequences are U+FFFD, NUL bytes the visible U+2400.
         text: String,
-        /// Whether the file was longer.
+        /// Whether the file goes on after `end_offset`.
         truncated: bool,
+        /// Encoding the file was decoded from.
+        encoding: TextEncoding,
+        /// Size of the file in bytes.
+        total_bytes: u64,
+        /// Byte offset in the file just after `text`: where the next chunk starts.
+        end_offset: u64,
     },
     /// PDF first page.
     Pdf {
@@ -107,6 +124,21 @@ pub enum PreviewContent {
         /// Explanation.
         hint: String,
     },
+}
+
+impl PreviewContent {
+    /// A complete UTF-8 text preview of `text` (the whole file).
+    pub fn text(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let len = text.len() as u64;
+        Self::Text {
+            text,
+            truncated: false,
+            encoding: TextEncoding::Utf8,
+            total_bytes: len,
+            end_offset: len,
+        }
+    }
 }
 
 /// One finished preview.

@@ -1,4 +1,7 @@
-//! Which provider handles a file, decided by its lowercase extension.
+//! Which provider handles a file, decided by its name (a few well-known text files have no
+//! extension) and then by its lowercase extension.
+
+use everythux_core::text::extension;
 
 /// Provider family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +15,14 @@ pub(crate) enum Kind {
     TypeScriptOrVideo,
     /// Unknown extension: thumbnail cache, then content sniffing for text.
     Other,
+}
+
+/// Classifies a file by its name (the last path component, as bytes).
+pub(crate) fn classify_file(name: &[u8]) -> Kind {
+    if is_known_text_name(name) {
+        return Kind::Text;
+    }
+    classify(extension(name).as_deref())
 }
 
 pub(crate) fn classify(ext: Option<&str>) -> Kind {
@@ -151,7 +162,98 @@ const TEXT_EXTENSIONS: &[&str] = &[
     "gitignore",
     "gitattributes",
     "editorconfig",
+    // .NET, build and infrastructure files.
+    "csproj",
+    "fsproj",
+    "vbproj",
+    "vcxproj",
+    "proj",
+    "sln",
+    "slnx",
+    "props",
+    "targets",
+    "xaml",
+    "axaml",
+    "razor",
+    "cshtml",
+    "resx",
+    "nuspec",
+    "ruleset",
+    "runsettings",
+    "manifest",
+    "http",
+    "bicep",
+    "hcl",
+    "tfvars",
+    "dockerfile",
+    "containerfile",
+    "jenkinsfile",
+    "gemspec",
+    "podspec",
+    "plist",
+    "reg",
+    "psm1",
+    "psd1",
+    "cmd",
+    "awk",
+    "sed",
+    "nfo",
+    "readme",
 ];
+
+/// Whole file names (compared case-insensitively) that are text without a telling extension.
+/// Dot files are here too: `.bashrc` has no extension in the `foo.ext` sense.
+const KNOWN_TEXT_FILENAMES: &[&str] = &[
+    "dockerfile",
+    "containerfile",
+    "jenkinsfile",
+    "vagrantfile",
+    "gemfile",
+    "rakefile",
+    "podfile",
+    "brewfile",
+    "procfile",
+    "justfile",
+    "makefile",
+    "gnumakefile",
+    "license",
+    "licence",
+    "readme",
+    "changelog",
+    "changes",
+    "authors",
+    "contributors",
+    "copying",
+    "notice",
+    "install",
+    "todo",
+    "news",
+    "codeowners",
+    ".gitignore",
+    ".gitattributes",
+    ".gitmodules",
+    ".gitconfig",
+    ".editorconfig",
+    ".dockerignore",
+    ".env",
+    ".bashrc",
+    ".bash_profile",
+    ".bash_aliases",
+    ".profile",
+    ".zshrc",
+    ".zprofile",
+    ".vimrc",
+    ".inputrc",
+    ".npmrc",
+    ".prettierrc",
+    ".eslintrc",
+];
+
+fn is_known_text_name(name: &[u8]) -> bool {
+    KNOWN_TEXT_FILENAMES
+        .iter()
+        .any(|known| name.eq_ignore_ascii_case(known.as_bytes()))
+}
 
 fn is_text_extension(ext: &str) -> bool {
     TEXT_EXTENSIONS.contains(&ext)
@@ -178,5 +280,64 @@ mod tests {
         ] {
             assert_eq!(classify(ext), kind, "{ext:?}");
         }
+    }
+
+    #[test]
+    fn dotnet_and_build_extensions_are_text() {
+        for ext in [
+            "csproj",
+            "fsproj",
+            "vbproj",
+            "sln",
+            "slnx",
+            "props",
+            "targets",
+            "xaml",
+            "axaml",
+            "razor",
+            "cshtml",
+            "resx",
+            "nuspec",
+            "ruleset",
+            "runsettings",
+            "http",
+            "bicep",
+            "hcl",
+            "dockerfile",
+            "containerfile",
+            "jenkinsfile",
+        ] {
+            assert_eq!(classify(Some(ext)), Kind::Text, "{ext}");
+            assert_eq!(
+                classify_file(format!("App.{}", ext.to_uppercase()).as_bytes()),
+                Kind::Text,
+                "{ext}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_file_names_are_text() {
+        for name in [
+            "Dockerfile",
+            "Containerfile",
+            "Jenkinsfile",
+            "Vagrantfile",
+            "Gemfile",
+            "Rakefile",
+            "LICENSE",
+            "README",
+            "CHANGELOG",
+            "AUTHORS",
+            "COPYING",
+            "makefile",
+            ".bashrc",
+            ".gitignore",
+        ] {
+            assert_eq!(classify_file(name.as_bytes()), Kind::Text, "{name}");
+        }
+        assert_eq!(classify_file(b"Dockerfiles"), Kind::Other, "whole names only");
+        assert_eq!(classify_file(b"photo.png"), Kind::Image);
+        assert_eq!(classify_file(b"bad\xffname"), Kind::Other);
     }
 }

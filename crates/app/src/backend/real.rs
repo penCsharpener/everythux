@@ -13,7 +13,7 @@ use everythux_platform::file_manager;
 use everythux_platform::fileops;
 use everythux_platform::mime::{self, Category};
 use everythux_platform::udisks;
-use everythux_preview::{PreviewLimits, PreviewService};
+use everythux_preview::{PreviewLimits, PreviewService, TextEncoding};
 use everythux_search::{SearchRequest, SearchService};
 
 use super::workers::{CONFIG_DEBOUNCE, ConfigSaver, forward, spawn_compute_worker, spawn_worker};
@@ -250,6 +250,17 @@ impl Backend for RealBackend {
             handle.limits = limits;
         }
         handle.service.request(path)
+    }
+
+    fn request_text_range(&self, path: PathBuf, offset: u64, len: u64, encoding: TextEncoding) -> u64 {
+        let mut guard = self.preview.lock().unwrap_or_else(PoisonError::into_inner);
+        let handle = guard.get_or_insert_with(|| {
+            let limits = PreviewLimits::default();
+            let (service, rx) = PreviewService::start(limits);
+            forward(rx, self.events.clone(), self.ctx.clone(), BackendEvent::Preview);
+            PreviewHandle { service, limits }
+        });
+        handle.service.request_range(path, offset, len, encoding)
     }
 
     fn platform(&self, action: PlatformAction) {

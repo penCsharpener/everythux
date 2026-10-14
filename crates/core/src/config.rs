@@ -162,6 +162,10 @@ impl Default for SortConfig {
 /// Preview pane settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent user toggles, stored flat in JSON"
+)]
 pub struct PreviewPaneConfig {
     /// Whether the pane is shown.
     pub enabled: bool,
@@ -171,6 +175,10 @@ pub struct PreviewPaneConfig {
     /// Whether the pane edge can be dragged to change `width`. Off by default: the width is set
     /// in View → Preview pane.
     pub resizable: bool,
+    /// Wrap long lines of text previews at the pane width (otherwise they scroll sideways).
+    pub wrap_text: bool,
+    /// Show line numbers next to text previews.
+    pub line_numbers: bool,
     /// Files larger than this aren't previewed (bytes).
     pub max_file_size: u64,
 }
@@ -181,6 +189,8 @@ impl Default for PreviewPaneConfig {
             enabled: false,
             width: 360.0,
             resizable: false,
+            wrap_text: true,
+            line_numbers: false,
             max_file_size: 512 * 1024 * 1024,
         }
     }
@@ -465,5 +475,6 @@ mod tests {
         let pane = &config.ui.preview_pane;
         assert!((pane.width - 400.0).abs() < f32::EPSILON);
         assert!(!pane.resizable, "fixed width unless asked for");
+        assert!(pane.wrap_text && !pane.line_numbers);
     }
 }

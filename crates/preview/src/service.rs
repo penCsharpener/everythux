@@ -12,11 +12,25 @@ use crate::cache::{BYTE_BUDGET, CAPACITY, CacheKey, PreviewCache, is_cacheable};
 use crate::cancel::Cancel;
 use crate::env::Env;
 use crate::error::PreviewError;
-use crate::{PreviewContent, PreviewLimits, PreviewResult, render};
+use crate::{PreviewContent, PreviewLimits, PreviewResult, TextEncoding, render, textfile};
 
 struct Job {
     id: u64,
     path: PathBuf,
+    what: Wanted,
+}
+
+/// What a [`Job`] asks for.
+#[derive(Debug, Clone, Copy)]
+enum Wanted {
+    /// The normal preview of the file.
+    Preview,
+    /// More text of a file whose head was already previewed.
+    TextRange {
+        offset: u64,
+        len: u64,
+        encoding: TextEncoding,
+    },
 }
 
 /// Background preview worker.
@@ -81,10 +95,32 @@ impl PreviewService {
     ///
     /// Ids increase with every call, starting at 1.
     pub fn request(&self, path: PathBuf) -> u64 {
+        self.submit(path, Wanted::Preview)
+    }
+
+    /// Requests up to `len` more bytes of text of `path`, starting at `offset` (the `end_offset`
+    /// of the text shown so far) and decoded as `encoding` (that of the head). Like
+    /// [`request`](Self::request), this cancels whatever runs and returns the request id; the
+    /// result is a [`PreviewContent::Text`] holding just the new chunk.
+    ///
+    /// Nothing past [`crate::TEXT_MAX_BYTES`] is read: a range starting there yields
+    /// [`PreviewContent::Unavailable`], and one reaching over it is cut at the cap.
+    pub fn request_range(&self, path: PathBuf, offset: u64, len: u64, encoding: TextEncoding) -> u64 {
+        self.submit(
+            path,
+            Wanted::TextRange {
+                offset,
+                len,
+                encoding,
+            },
+        )
+    }
+
+    fn submit(&self, path: PathBuf, what: Wanted) -> u64 {
         // Bumping `latest` is what cancels the running request, before the new job is even queued.
         let id = self.latest.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(jobs) = &self.jobs
-            && jobs.send(Job { id, path }).is_err()
+            && jobs.send(Job { id, path, what }).is_err()
         {
             tracing::warn!("preview worker is gone; request {id} dropped");
         }
@@ -132,11 +168,22 @@ fn worker_loop<F>(
         }
         let limits = *limits.lock().unwrap_or_else(PoisonError::into_inner);
 
-        let key = CacheKey::of(&job.path, limits);
-        let cached = key.as_ref().and_then(|k| cache.get(k)).cloned();
-        let Some(content) =
-            cached.or_else(|| compute(&mut render, &job.path, limits, &cancel, key, &mut cache))
-        else {
+        let content = match job.what {
+            Wanted::Preview => {
+                let key = CacheKey::of(&job.path, limits);
+                let cached = key.as_ref().and_then(|k| cache.get(k)).cloned();
+                cached.or_else(|| compute(&mut render, &job.path, limits, &cancel, key, &mut cache))
+            }
+            // Ranges are read once and appended by the caller; caching them buys nothing.
+            Wanted::TextRange {
+                offset,
+                len,
+                encoding,
+            } => guarded(&job.path, || {
+                textfile::read_range(&job.path, offset, len, encoding, &cancel)
+            }),
+        };
+        let Some(content) = content else {
             continue; // superseded while rendering
         };
 
@@ -166,17 +213,24 @@ fn compute<F>(
 where
     F: FnMut(&Path, PreviewLimits, &Cancel) -> Result<PreviewContent, PreviewError>,
 {
+    let content = guarded(path, || render(path, limits, cancel))?;
+    if let Some(key) = key
+        && is_cacheable(&content)
+        && !cancel.is_cancelled()
+    {
+        cache.insert(key, content.clone());
+    }
+    Some(content)
+}
+
+/// Runs a provider, turning errors into `Unavailable` and cancellation into `None`.
+fn guarded(
+    path: &Path,
+    provider: impl FnOnce() -> Result<PreviewContent, PreviewError>,
+) -> Option<PreviewContent> {
     // Providers parse untrusted files; a bug in a decoder must cost one preview, not the worker.
-    match catch_unwind(AssertUnwindSafe(|| render(path, limits, cancel))) {
-        Ok(Ok(content)) => {
-            if let Some(key) = key
-                && is_cacheable(&content)
-                && !cancel.is_cancelled()
-            {
-                cache.insert(key, content.clone());
-            }
-            Some(content)
-        }
+    match catch_unwind(AssertUnwindSafe(provider)) {
+        Ok(Ok(content)) => Some(content),
         Ok(Err(e)) if e.is_cancelled() => None,
         Ok(Err(e)) => Some(PreviewContent::Unavailable { hint: e.hint() }),
         Err(_) => {
@@ -202,10 +256,7 @@ mod tests {
     const WAIT: Duration = Duration::from_secs(20);
 
     fn text(s: &str) -> PreviewContent {
-        PreviewContent::Text {
-            text: s.to_owned(),
-            truncated: false,
-        }
+        PreviewContent::text(s)
     }
 
     /// The worker has exited and nothing else is queued: the channel is empty *and* disconnected.

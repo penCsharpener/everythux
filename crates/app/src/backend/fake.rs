@@ -12,7 +12,7 @@ use everythux_index::{IndexerSettings, Job};
 use everythux_platform::PlatformError;
 use everythux_platform::file_manager::Method;
 use everythux_platform::mime::Category;
-use everythux_preview::PreviewLimits;
+use everythux_preview::{PreviewLimits, TextEncoding};
 use everythux_search::{SearchRequest, SearchResults};
 
 use super::{Backend, BackendEvent, Compute, PlatformAction};
@@ -26,6 +26,12 @@ pub(crate) enum Call {
     Search(SearchRequest),
     SetSnapshot,
     RequestPreview(PathBuf),
+    RequestTextRange {
+        path: PathBuf,
+        offset: u64,
+        len: u64,
+        encoding: TextEncoding,
+    },
     Platform(PlatformAction),
     ListDevices(Vec<String>),
     Mount(String),
@@ -199,6 +205,18 @@ impl Backend for FakeBackend {
         let mut s = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         s.preview_request += 1;
         s.calls.push(Call::RequestPreview(path));
+        s.preview_request
+    }
+
+    fn request_text_range(&self, path: PathBuf, offset: u64, len: u64, encoding: TextEncoding) -> u64 {
+        let mut s = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        s.preview_request += 1;
+        s.calls.push(Call::RequestTextRange {
+            path,
+            offset,
+            len,
+            encoding,
+        });
         s.preview_request
     }
 

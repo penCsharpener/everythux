@@ -426,10 +426,7 @@ fn preview_rig() -> Rig {
         .send(BackendEvent::Preview(everythux_preview::PreviewResult {
             request: id,
             path,
-            content: everythux_preview::PreviewContent::Text {
-                text: "hello from the preview pane".to_owned(),
-                truncated: false,
-            },
+            content: everythux_preview::PreviewContent::text("hello from the preview pane"),
         }));
     r.harness.run_steps(3);
     assert!(r.harness.query_by_label("hello from the preview pane").is_some());
@@ -696,10 +693,7 @@ fn fixed_width_pane_has_exact_width_for_every_content_kind() {
             page: rgba(2000, 80),
             pages: Some(1),
         },
-        PreviewContent::Text {
-            text: format!("{}\nshort line\n", "0123456789".repeat(1000)),
-            truncated: false,
-        },
+        PreviewContent::text(format!("{}\nshort line\n", "0123456789".repeat(1000))),
         PreviewContent::Audio {
             meta: long_meta.clone(),
             cover: Some(rgba(2000, 2000)),
@@ -723,6 +717,17 @@ fn fixed_width_pane_has_exact_width_for_every_content_kind() {
         r.harness.run_steps(3);
         assert_pane_width(&r, 360.0, &what);
     }
+    // Wide text without wrapping (and with line numbers) scrolls sideways inside the pane.
+    let pane = &mut r.harness.state_mut().config.ui.preview_pane;
+    pane.wrap_text = false;
+    pane.line_numbers = true;
+    r.fake.send(BackendEvent::Preview(PreviewResult {
+        request: id,
+        path,
+        content: PreviewContent::text("0123456789".repeat(1000)),
+    }));
+    r.harness.run_steps(3);
+    assert_pane_width(&r, 360.0, "unwrapped text");
 }
 
 #[test]
@@ -835,6 +840,280 @@ fn narrow_window_shrinks_the_pane_without_changing_config() {
     assert_pane_width(&r, 360.0, "back to the fixed width");
     assert!((r.harness.state().config.ui.preview_pane.width - 360.0).abs() < f32::EPSILON);
     assert_eq!(saved_widths(&r), Vec::<f32>::new());
+}
+
+// --- Text preview (v0.5 Phase B) -------------------------------------------------------------
+
+/// Clipboard writes of the next frame.
+fn copied_next_frame(r: &mut Rig) -> Vec<String> {
+    r.harness.step();
+    r.harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|c| match c {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The selection and preview request state did not change (text previews have their own labels,
+/// unlike `assert_preview_untouched`).
+fn assert_still_previewing_notes(r: &Rig, what: &str) {
+    let app = r.harness.state();
+    assert_eq!(
+        app.selection.rows().collect::<Vec<_>>(),
+        [1],
+        "{what}: selection changed"
+    );
+    assert!(preview_calls(r).is_empty(), "{what}: new preview request");
+    assert!(
+        app.preview.shown.as_ref().is_some_and(|s| s.text.is_some()),
+        "{what}: text preview dropped"
+    );
+}
+
+/// A rig previewing `notes.txt` with `content` (request id and path filled in).
+fn text_rig(content: everythux_preview::PreviewContent) -> Rig {
+    let mut r = preview_rig();
+    let (path, id) = r.harness.state().preview.requested.clone().expect("requested");
+    r.fake
+        .send(BackendEvent::Preview(everythux_preview::PreviewResult {
+            request: id,
+            path,
+            content,
+        }));
+    r.harness.run_steps(3);
+    r.fake.clear();
+    r
+}
+
+#[test]
+fn ctrl_c_copies_the_selected_preview_text_not_the_path() {
+    let mut r = text_rig(everythux_preview::PreviewContent::text(
+        "first line\nsecond line\n",
+    ));
+    r.harness.get_by_label("first line").click();
+    r.harness.run_steps(2);
+    assert!(
+        r.harness
+            .ctx
+            .memory(|m| m.has_focus(crate::ui::text_view::text_view_id())),
+        "clicking the text focuses it"
+    );
+    r.harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    r.harness.run_steps(1);
+    r.harness.event(egui::Event::Copy);
+    assert_eq!(copied_next_frame(&mut r), ["first line\nsecond line\n"]);
+    // The same through the key event (backends that do not synthesise `Event::Copy`), sent as
+    // one event so the copy lands in the frame `copied_next_frame` looks at.
+    r.harness.event(egui::Event::Key {
+        key: Key::C,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    });
+    assert_eq!(copied_next_frame(&mut r), ["first line\nsecond line\n"]);
+}
+
+#[test]
+fn ctrl_c_with_the_table_focused_still_copies_the_path() {
+    let mut r = text_rig(everythux_preview::PreviewContent::text(
+        "first line\nsecond line\n",
+    ));
+    r.harness.get_by_label("first line").click();
+    r.harness.run_steps(1);
+    r.harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    r.harness.run_steps(1);
+    assert!(r.harness.state().preview_text_selected());
+    // Back to the table: the click ends the text selection and takes the focus away.
+    r.harness
+        .query_all_by_label("notes.txt")
+        .min_by(|a, b| a.rect().min.x.total_cmp(&b.rect().min.x))
+        .expect("the table cell")
+        .click();
+    r.harness.run_steps(2);
+    // As in `copy_event_copies_the_selected_paths`: a real window frees the search box focus.
+    r.harness
+        .ctx
+        .memory_mut(|m| m.surrender_focus(crate::app::search_id()));
+    r.harness.run_steps(1);
+    assert!(!r.harness.state().preview_text_selected());
+    r.harness.event(egui::Event::Copy);
+    assert_eq!(copied_next_frame(&mut r), ["/home/me/docs/notes.txt"]);
+}
+
+#[test]
+fn dragging_over_the_text_selects_it() {
+    let mut r = text_rig(everythux_preview::PreviewContent::text(
+        "alpha beta\ngamma delta\n",
+    ));
+    let first = r.harness.get_by_label("alpha beta").rect();
+    let second = r.harness.get_by_label("gamma delta").rect();
+    let start = egui::pos2(first.min.x + 1.0, first.center().y);
+    let end = egui::pos2(second.max.x - 1.0, second.center().y);
+    r.harness.hover_at(start);
+    r.harness.run_steps(1);
+    r.harness.drag_at(start);
+    r.harness.run_steps(1);
+    for step in 1..=5 {
+        r.harness.hover_at(start.lerp(end, step as f32 / 5.0));
+        r.harness.run_steps(1);
+    }
+    r.harness.drop_at(end);
+    r.harness.run_steps(2);
+    let doc = r
+        .harness
+        .state()
+        .preview
+        .shown
+        .as_ref()
+        .and_then(|s| s.text.clone());
+    let selected = doc.as_ref().and_then(|d| d.selected_text().map(str::to_owned));
+    assert_eq!(selected.as_deref(), Some("alpha beta\ngamma delta"));
+    assert_still_previewing_notes(&r, "selecting text");
+}
+
+#[test]
+fn wrap_and_line_number_toggles_are_persisted() {
+    let mut r = text_rig(everythux_preview::PreviewContent::text("x\n"));
+    assert!(
+        r.harness.state().config.ui.preview_pane.wrap_text,
+        "wrap is the default"
+    );
+    r.harness.get_by_label("Wrap").click();
+    r.harness.run_steps(2);
+    r.harness.get_by_label("Line numbers").click();
+    r.harness.run_steps(2);
+    let pane = &r.harness.state().config.ui.preview_pane;
+    assert!(!pane.wrap_text && pane.line_numbers);
+    let saved = r.fake.last_saved_config().expect("saved");
+    assert!(!saved.ui.preview_pane.wrap_text && saved.ui.preview_pane.line_numbers);
+}
+
+#[test]
+fn header_names_the_encoding_and_show_more_loads_the_next_range() {
+    use everythux_preview::{PreviewContent, PreviewResult, TEXT_MORE_BYTES, TextEncoding};
+
+    let head = "line\n".repeat(13_107); // 65 535 bytes
+    let mut r = text_rig(PreviewContent::Text {
+        text: head.clone(),
+        truncated: true,
+        encoding: TextEncoding::Utf16Le,
+        total_bytes: 1_258_291,
+        end_offset: 131_072,
+    });
+    assert!(
+        r.harness
+            .query_by_label("UTF-16 LE · 1.2 MiB · showing first 128 KiB")
+            .is_some()
+    );
+    r.harness.get_by_label("Show more (next 256 KiB)").click();
+    r.harness.run_steps(2);
+    let path = std::path::PathBuf::from("/home/me/docs/notes.txt");
+    let range_calls: Vec<_> = r
+        .fake
+        .calls()
+        .into_iter()
+        .filter(|c| matches!(c, crate::backend::fake::Call::RequestTextRange { .. }))
+        .collect();
+    assert_eq!(
+        range_calls,
+        [crate::backend::fake::Call::RequestTextRange {
+            path: path.clone(),
+            offset: 131_072,
+            len: TEXT_MORE_BYTES,
+            encoding: TextEncoding::Utf16Le,
+        }]
+    );
+    assert!(r.harness.query_by_label("Loading more…").is_some());
+    let id = r.harness.state().preview.more_request.expect("pending");
+    r.fake.send(BackendEvent::Preview(PreviewResult {
+        request: id,
+        path,
+        content: PreviewContent::Text {
+            text: "the rest\n".to_owned(),
+            truncated: false,
+            encoding: TextEncoding::Utf16Le,
+            total_bytes: 1_258_291,
+            end_offset: 1_258_291,
+        },
+    }));
+    r.harness.run_steps(3);
+    let app = r.harness.state();
+    let doc = app
+        .preview
+        .shown
+        .as_ref()
+        .and_then(|s| s.text.as_ref())
+        .expect("text");
+    assert_eq!(doc.rows().len(), 13_107 + 2, "appended (plus the empty last row)");
+    assert!(
+        r.harness.query_by_label("UTF-16 LE · 1.2 MiB").is_some(),
+        "complete now"
+    );
+    assert!(r.harness.query_by_label_contains("Show more").is_none());
+    assert_still_previewing_notes(&r, "show more");
+}
+
+#[test]
+fn large_text_renders_only_the_rows_in_view() {
+    let line = "2026-10-14 12:00:00 INFO worker finished a job in 3 ms\n";
+    let text = line.repeat(8 * 1024 * 1024 / line.len());
+    let r = text_rig(everythux_preview::PreviewContent::text(text));
+    let labels = r.harness.query_all_by_label_contains("worker finished").count();
+    assert!(
+        (5..200).contains(&labels),
+        "{labels} rows laid out; only the visible ones should be"
+    );
+}
+
+#[test]
+#[ignore = "timing report: cargo test --release -p everythux-app -- --ignored --nocapture text_preview_timing"]
+fn text_preview_timing() {
+    use std::time::Instant;
+
+    use everythux_preview::TextEncoding;
+
+    let line = "2026-10-14 12:00:00 INFO worker-7 finished job “import” in 3 ms — ok\n";
+    let text = line.repeat(8 * 1024 * 1024 / line.len());
+    let len = text.len() as u64;
+    let start = Instant::now();
+    let mut doc = crate::text_doc::TextDoc::new(text.clone(), TextEncoding::Utf8, len, len);
+    let index = start.elapsed();
+    let start = Instant::now();
+    doc.layout(45);
+    let wrap = start.elapsed();
+    let start = Instant::now();
+    doc.layout(crate::text_doc::MAX_ROW_COLUMNS);
+    let no_wrap = start.elapsed();
+
+    let mut r = text_rig(everythux_preview::PreviewContent::text(text));
+    r.harness.run_steps(5);
+    let frames = 100;
+    let start = Instant::now();
+    for i in 0..frames {
+        // Scroll a page down on every other frame, so rows are laid out afresh.
+        if i % 2 == 0 {
+            r.harness.hover_at(egui::pos2(WINDOW_WIDTH - 150.0, 300.0));
+            r.harness.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Page,
+                delta: egui::vec2(0.0, -1.0),
+                modifiers: Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+            });
+        }
+        r.harness.step();
+    }
+    let per_frame = start.elapsed() / frames;
+    eprintln!(
+        "8 MiB text ({} lines): index {index:?}, wrap layout {wrap:?}, no-wrap layout {no_wrap:?}, \
+         frame while scrolling {per_frame:?} (kittest, includes AccessKit)",
+        doc.line_count()
+    );
 }
 
 // --- Inline rename ------------------------------------------------------------------------
