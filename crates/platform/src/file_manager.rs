@@ -47,6 +47,10 @@ pub enum Method {
     Portal,
     /// `xdg-open` (no selection / properties possible).
     XdgOpen,
+    /// A program started from an "Open with" or service-menu entry.
+    Launched,
+    /// Files put on the clipboard through a helper program.
+    Clipboard,
 }
 
 /// Opens the folder containing `path` with `path` selected (Path column double-click).

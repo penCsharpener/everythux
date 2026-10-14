@@ -2145,3 +2145,182 @@ mod search_bars {
         assert_eq!(ids(&r), [0, 1], "Escape doesn't close bars");
     }
 }
+
+// --- Context menu: open with, file actions, copy file, trash ------------------------------
+
+mod context_menu {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use everythux_platform::actions::{ActionCatalog, XdgDirs};
+
+    use super::*;
+
+    const NOTES: &str = "/home/me/docs/notes.txt";
+
+    /// A catalog with Kate (text) and a service menu with a top-level and a submenu action.
+    fn catalog() -> Arc<ActionCatalog> {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let write = |rel: &str, text: &str| {
+            let path = tmp.path().join(rel);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+            std::fs::write(path, text).expect("write");
+        };
+        write(
+            "data/applications/kate.desktop",
+            "[Desktop Entry]\nType=Application\nName=Kate\nExec=kate %F\nMimeType=text/plain;\n",
+        );
+        write(
+            "data/kio/servicemenus/text.desktop",
+            "[Desktop Entry]\nMimeType=text/plain;\nActions=count;\n[Desktop Action count]\nName=Count words\nExec=wc -w %f\n",
+        );
+        write(
+            "data/kio/servicemenus/hashes.desktop",
+            "[Desktop Entry]\nMimeType=text/plain;\nActions=hash;\nX-KDE-Submenu=Hashes\n[Desktop Action hash]\nName=Checksum\nExec=sha256sum %f\n",
+        );
+        let dirs = XdgDirs {
+            config_home: tmp.path().join("config"),
+            data_home: tmp.path().join("none"),
+            data_dirs: vec![tmp.path().join("data")],
+            ..XdgDirs::default()
+        };
+        Arc::new(ActionCatalog::load(&dirs))
+    }
+
+    fn open_menu(r: &mut Rig) {
+        r.fake.send(BackendEvent::Actions(catalog()));
+        r.harness.run_steps(2);
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+    }
+
+    #[test]
+    fn open_with_lists_the_apps_for_the_type_and_launches_one() {
+        let mut r = rig();
+        r.show_default();
+        open_menu(&mut r);
+        r.harness.get_by_label_contains("Open with").click();
+        r.harness.run_steps(3);
+        r.harness.get_by_label("Kate").click();
+        r.harness.run_steps(3);
+        let actions = r.fake.platform_actions();
+        let [PlatformAction::Launch { launcher, paths }] = actions.as_slice() else {
+            panic!("expected one launch, got {actions:?}");
+        };
+        assert_eq!(launcher.name, "Kate");
+        assert_eq!(paths, &[PathBuf::from(NOTES)]);
+    }
+
+    #[test]
+    fn file_actions_appear_with_submenus_and_run_on_the_selection() {
+        let mut r = rig();
+        r.show_default();
+        open_menu(&mut r);
+        r.harness.get_by_label("Count words").click();
+        r.harness.run_steps(3);
+        let actions = r.fake.platform_actions();
+        let [PlatformAction::Launch { launcher, paths }] = actions.as_slice() else {
+            panic!("expected one launch, got {actions:?}");
+        };
+        assert_eq!(launcher.exec, "wc -w %f");
+        assert_eq!(paths, &[PathBuf::from(NOTES)]);
+        // The grouped action sits under its submenu.
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        assert!(r.harness.query_by_label("Checksum").is_none());
+        r.harness.get_by_label_contains("Hashes").click();
+        r.harness.run_steps(3);
+        assert!(r.harness.query_by_label("Checksum").is_some());
+    }
+
+    #[test]
+    fn move_to_trash_and_copy_file_act_on_the_row() {
+        let mut r = rig();
+        r.show_default();
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        r.harness.get_by_label("Copy file").click();
+        r.harness.run_steps(3);
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        r.harness.get_by_label("Move to Trash").click();
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [
+                PlatformAction::CopyFiles(vec![NOTES.into()]),
+                PlatformAction::Trash(vec![NOTES.into()]),
+            ]
+        );
+    }
+
+    #[test]
+    fn trash_outcome_toasts_and_rescans_the_folder() {
+        let mut r = rig();
+        r.show_default();
+        r.fake.clear();
+        r.fake.send(BackendEvent::Trashed(vec![(NOTES.into(), Ok(()))]));
+        r.harness.run_steps(2);
+        let app = r.harness.state();
+        assert!(
+            app.toasts
+                .iter()
+                .any(|t| t.text.contains("Moved notes.txt to the trash"))
+        );
+        assert!(r.fake.jobs().iter().any(|j| matches!(
+            j,
+            Job::RescanPath { path, mode: everythux_index::ScanMode::Quick }
+                if path == &PathBuf::from("/home/me/docs")
+        )));
+    }
+
+    #[test]
+    fn failed_trash_reports_the_reason() {
+        let mut r = rig();
+        r.show_default();
+        r.fake.send(BackendEvent::Trashed(vec![(
+            NOTES.into(),
+            Err("permission denied".into()),
+        )]));
+        r.harness.run_steps(2);
+        assert!(
+            r.harness
+                .state()
+                .toasts
+                .iter()
+                .any(|t| t.text.contains("Cannot move notes.txt") && t.text.contains("permission denied"))
+        );
+    }
+
+    #[test]
+    fn hiding_an_entry_persists_and_removes_it_from_the_next_menu() {
+        let mut r = rig();
+        r.show_default();
+        open_menu(&mut r);
+        r.harness.get_by_label_contains("Hide an entry").click();
+        r.harness.run_steps(3);
+        // The entry is listed twice now: in the menu and in the "Hide an entry" submenu.
+        r.harness
+            .query_all_by_label("Count words")
+            .last()
+            .expect("entry in the submenu")
+            .click();
+        r.harness.run_steps(3);
+        let saved = r.fake.last_saved_config().expect("saved");
+        assert_eq!(saved.ui.context_menu.hidden, ["service:text.desktop:count"]);
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        assert!(r.harness.query_by_label("Count words").is_none());
+    }
+
+    #[test]
+    fn the_catalog_is_requested_at_startup() {
+        let r = rig();
+        assert!(
+            r.fake
+                .calls()
+                .iter()
+                .any(|c| matches!(c, crate::backend::fake::Call::LoadActions))
+        );
+    }
+}

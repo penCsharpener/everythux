@@ -13,6 +13,10 @@ Written in Rust, focused on ext4, backed by SQLite.
 - Narrow a search step by step: `+` (or `Ctrl+Shift+T`) adds another search bar, and all bars combine with AND.
   `Tab` switches between the result list and the newest bar.
 - Five columns: Name, Path, Type, Date Modified, Size (folders show their recursive size).
+- Right-click a row for **Open with ▸** (the applications for its type), the actions other programs add
+  for that file type (KDE service menus, Nemo actions, Thunar custom actions), **Copy file** (paste it in
+  a file manager; needs `wl-copy` or `xclip`) and **Move to Trash**. View → Context menu turns the extra
+  entries off or brings hidden ones back.
 - Double-click a **Path** cell to open the folder with the file selected. Double-click **Size** or
   **Date Modified** to open the folder's properties. Double-click **Name** to open the file.
 - `F2` (or Right-click → Rename…) renames the selected file or folder right in the list; the status bar offers Undo.

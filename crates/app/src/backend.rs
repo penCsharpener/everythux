@@ -20,6 +20,7 @@ use everythux_core::exclusion::ExclusionRule;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{IndexEvent, IndexerSettings, Job};
 use everythux_platform::PlatformError;
+use everythux_platform::actions::{ActionCatalog, Launcher};
 use everythux_platform::file_manager::Method;
 use everythux_platform::mime::Category;
 use everythux_platform::udisks::BlockDevice;
@@ -37,6 +38,13 @@ pub(crate) enum PlatformAction {
     ShowItem(PathBuf),
     /// Ask the file manager for its properties dialog (Size / Modified double-click).
     ShowProperties(PropTarget),
+    /// Start an "Open with" application or a service-menu action for `paths`.
+    Launch { launcher: Launcher, paths: Vec<PathBuf> },
+    /// Put these files on the clipboard as a file list (paste in a file manager).
+    CopyFiles(Vec<PathBuf>),
+    /// Move these to the trash (the outcome arrives as [`BackendEvent::Trashed`], not as
+    /// [`BackendEvent::Platform`]).
+    Trash(Vec<PathBuf>),
     /// Rename `from` inside its folder (blocking `rename(2)`; the outcome arrives as
     /// [`BackendEvent::Renamed`], not as [`BackendEvent::Platform`]). `undo` marks a rename that
     /// reverts an earlier one.
@@ -54,6 +62,12 @@ impl PlatformAction {
             Self::OpenDefault(p) => format!("Open {}", p.display()),
             Self::ShowItem(p) => format!("Show {} in folder", p.display()),
             Self::ShowProperties(t) => format!("Properties of {}", t.path.display()),
+            Self::Launch { launcher, paths } => match paths.as_slice() {
+                [one] => format!("Run {} on {}", launcher.name, one.display()),
+                many => format!("Run {} on {} items", launcher.name, many.len()),
+            },
+            Self::CopyFiles(paths) => format!("Copy {} file(s) to the clipboard", paths.len()),
+            Self::Trash(paths) => format!("Move {} item(s) to the trash", paths.len()),
             Self::Rename { from, new_name, .. } => {
                 format!("Rename {} to {}", from.display(), new_name.to_string_lossy())
             }
@@ -114,6 +128,10 @@ pub(crate) enum BackendEvent {
         undo: bool,
         result: Result<PathBuf, String>,
     },
+    /// Outcome of [`PlatformAction::Trash`], one result per path.
+    Trashed(Vec<(PathBuf, Result<(), String>)>),
+    /// The installed applications and file actions, read from the XDG directories.
+    Actions(Arc<ActionCatalog>),
     Devices(Result<Vec<BlockDevice>, String>),
     Mounted {
         object_path: String,
@@ -151,6 +169,9 @@ pub(crate) trait Backend {
     fn request_text_range(&self, path: PathBuf, offset: u64, len: u64, encoding: TextEncoding) -> u64;
     /// Runs a desktop action; the outcome arrives as [`BackendEvent::Platform`].
     fn platform(&self, action: PlatformAction);
+    /// Reads the installed applications and file actions in the background; the catalog arrives as
+    /// [`BackendEvent::Actions`].
+    fn load_actions(&self);
     /// Asks UDisks2 for filesystems of these types; arrives as [`BackendEvent::Devices`].
     fn list_devices(&self, fs_types: Vec<String>);
     /// Mounts a device via UDisks2; arrives as [`BackendEvent::Mounted`].

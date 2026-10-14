@@ -27,6 +27,12 @@ pub(crate) enum Command {
     TogglePreviewResizable,
     /// View → Columns → Lock column widths.
     ToggleLockColumnWidths,
+    /// View → Context menu → Show "Open with".
+    ToggleContextOpenWith,
+    /// View → Context menu → Show actions of other programs.
+    ToggleContextServiceMenus,
+    /// View → Context menu → Restore hidden entries.
+    RestoreHiddenContextEntries,
     FocusSearch,
     ToggleMatchPath,
     ToggleCaseSensitive,
@@ -97,6 +103,9 @@ impl App {
             }
             Command::TogglePreviewResizable => self.toggle_preview_resizable(),
             Command::ToggleLockColumnWidths => self.toggle_lock_column_widths(),
+            Command::ToggleContextOpenWith => self.toggle_context_open_with(),
+            Command::ToggleContextServiceMenus => self.toggle_context_service_menus(),
+            Command::RestoreHiddenContextEntries => self.restore_hidden_context_entries(),
             Command::FocusSearch => self.search.focus_bar = Some(FIRST_BAR),
             Command::ToggleMatchPath => self.toggle_match_path(),
             Command::ToggleCaseSensitive => self.toggle_case_sensitive(),

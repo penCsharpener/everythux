@@ -9,7 +9,7 @@ use everythux_core::paths::AppPaths;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{Indexer, IndexerSettings, Job};
 use everythux_platform::PlatformError;
-use everythux_platform::file_manager;
+use everythux_platform::file_manager::{self, Method};
 use everythux_platform::fileops;
 use everythux_platform::mime::{self, Category};
 use everythux_platform::udisks;
@@ -93,26 +93,7 @@ impl RealBackend {
             "everythux-platform",
             events.clone(),
             ctx.clone(),
-            |action: PlatformAction| {
-                if let PlatformAction::Rename { from, new_name, undo } = action {
-                    let result = fileops::rename_in_place(&from, &new_name).map_err(|e| e.to_string());
-                    return vec![BackendEvent::Renamed {
-                        from,
-                        new_name,
-                        undo,
-                        result,
-                    }];
-                }
-                let result = match &action {
-                    PlatformAction::OpenDefault(p) => file_manager::open_default(p),
-                    PlatformAction::ShowItem(p) => file_manager::show_item(p),
-                    PlatformAction::ShowProperties(t) => file_manager::show_properties(&t.path),
-                    PlatformAction::Rename { .. } => {
-                        Err(PlatformError::Unsupported("rename is handled separately"))
-                    }
-                };
-                vec![BackendEvent::Platform { action, result }]
-            },
+            handle_platform_action,
         );
         // UDisks2 calls (mounting may wait for a polkit prompt) get their own thread so that they
         // never delay opening files.
@@ -267,6 +248,23 @@ impl Backend for RealBackend {
         let _ = self.platform_tx.send(action);
     }
 
+    fn load_actions(&self) {
+        let events = self.events.clone();
+        let ctx = self.ctx.clone();
+        let spawned = std::thread::Builder::new()
+            .name("everythux-actions".to_owned())
+            .spawn(move || {
+                let catalog = everythux_platform::actions::ActionCatalog::load_default();
+                tracing::info!(entries = catalog.len(), "context-menu actions loaded");
+                if events.send(BackendEvent::Actions(Arc::new(catalog))).is_ok() {
+                    ctx.request_repaint();
+                }
+            });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "cannot spawn the actions loader");
+        }
+    }
+
     fn list_devices(&self, fs_types: Vec<String>) {
         let _ = self.udisks_tx.send(UdisksTask::List(fs_types));
     }
@@ -290,4 +288,44 @@ impl Backend for RealBackend {
     fn category(&self, ext: &str) -> Category {
         mime::category(ext)
     }
+}
+
+/// Runs one desktop action on the platform worker and reports what happened.
+fn handle_platform_action(action: PlatformAction) -> Vec<BackendEvent> {
+    if let PlatformAction::Rename { from, new_name, undo } = action {
+        let result = fileops::rename_in_place(&from, &new_name).map_err(|e| e.to_string());
+        return vec![BackendEvent::Renamed {
+            from,
+            new_name,
+            undo,
+            result,
+        }];
+    }
+    if let PlatformAction::Trash(paths) = action {
+        let results = paths
+            .into_iter()
+            .map(|p| {
+                let result = everythux_platform::trash::trash(&p)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string());
+                (p, result)
+            })
+            .collect();
+        return vec![BackendEvent::Trashed(results)];
+    }
+    let result = match &action {
+        PlatformAction::Launch { launcher, paths } => {
+            everythux_platform::actions::launch(launcher, paths).map(|_| Method::Launched)
+        }
+        PlatformAction::CopyFiles(paths) => {
+            everythux_platform::clipboard::copy_files(paths).map(|_| Method::Clipboard)
+        }
+        PlatformAction::OpenDefault(p) => file_manager::open_default(p),
+        PlatformAction::ShowItem(p) => file_manager::show_item(p),
+        PlatformAction::ShowProperties(t) => file_manager::show_properties(&t.path),
+        PlatformAction::Rename { .. } | PlatformAction::Trash(_) => {
+            Err(PlatformError::Unsupported("handled separately"))
+        }
+    };
+    vec![BackendEvent::Platform { action, result }]
 }

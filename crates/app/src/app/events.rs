@@ -18,6 +18,8 @@ fn method_label(method: Method) -> &'static str {
         Method::FileManager1 => "FileManager1",
         Method::Portal => "portal",
         Method::XdgOpen => "xdg-open",
+        Method::Launched => "launched",
+        Method::Clipboard => "clipboard",
     }
 }
 
@@ -41,6 +43,8 @@ impl App {
                 undo,
                 result,
             } => self.on_renamed(&from, &new_name, undo, result),
+            BackendEvent::Trashed(results) => self.on_trashed(&results),
+            BackendEvent::Actions(catalog) => self.actions = catalog,
             BackendEvent::Devices(result) => self.on_devices(result),
             BackendEvent::Mounted { object_path, result } => self.on_mounted(&object_path, result),
             BackendEvent::ExclusionPreview(preview) => self.on_exclusion_preview(preview),
@@ -95,14 +99,66 @@ impl App {
                     ToastKind::Info,
                 );
             }
-            // Renames report through `BackendEvent::Renamed`.
-            (PlatformAction::Rename { .. }, Ok(_)) => {}
+            // Renames and trashing report through their own events.
+            (PlatformAction::Rename { .. } | PlatformAction::Trash(_), Ok(_)) => {}
+            (PlatformAction::Launch { launcher, .. }, Ok(_)) => {
+                self.toast(format!("Started {}", launcher.name), ToastKind::Info);
+            }
+            (PlatformAction::CopyFiles(paths), Ok(_)) => {
+                let text = match paths.as_slice() {
+                    [_] => "Copied the file to the clipboard".to_owned(),
+                    many => format!("Copied {} files to the clipboard", many.len()),
+                };
+                self.toast(text, ToastKind::Info);
+            }
             (PlatformAction::ShowProperties(_), Ok(method)) => {
                 self.toast(
                     format!("Opened properties ({})", method_label(method)),
                     ToastKind::Info,
                 );
             }
+        }
+    }
+
+    /// Outcome of moving files to the trash: a summary toast, and a quick rescan of the folders
+    /// they left so the list stops showing them.
+    fn on_trashed(&mut self, results: &[(std::path::PathBuf, Result<(), String>)]) {
+        let moved = results.iter().filter(|(_, r)| r.is_ok()).count();
+        if let Some((path, Err(error))) = results.iter().find(|(_, r)| r.is_err()) {
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            let failed = results.len() - moved;
+            let text = if failed == 1 {
+                format!("Cannot move {name} to the trash: {error}")
+            } else {
+                format!("Moved {moved} to the trash, {failed} failed (first: {name}: {error})")
+            };
+            self.toast(text, ToastKind::Error);
+        } else {
+            let text = match results {
+                [(path, _)] => format!(
+                    "Moved {} to the trash",
+                    path.file_name()
+                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+                ),
+                _ => format!("Moved {moved} items to the trash"),
+            };
+            self.toast(text, ToastKind::Info);
+        }
+        let mut folders: Vec<std::path::PathBuf> = results
+            .iter()
+            .filter(|(_, r)| r.is_ok())
+            .filter_map(|(p, _)| p.parent().map(std::path::Path::to_path_buf))
+            .collect();
+        folders.sort();
+        folders.dedup();
+        for path in folders {
+            self.backend.submit_job(everythux_index::Job::RescanPath {
+                path,
+                mode: everythux_index::ScanMode::Quick,
+            });
         }
     }
 

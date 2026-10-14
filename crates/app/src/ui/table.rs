@@ -14,13 +14,14 @@ use everythux_platform::mime::Category;
 
 use super::icons;
 use super::rename_editor::{EditorEvent, rename_editor};
-use crate::app::CopyKind;
 use crate::app::{App, CellEvent, ContextAction, ROW_HEIGHT};
+use crate::app::{ContextExtras, CopyKind};
 use crate::backend::Backend;
 use crate::format::{format_local, format_size};
 use crate::model::ResultsView;
 use crate::rename::RenameEdit;
 use crate::selection::Selection;
+use everythux_platform::actions::MenuEntry;
 
 const HEADER_HEIGHT: f32 = 22.0;
 /// Upper bound on cached rows; a screenful is ~50, so this only matters after long scrolls.
@@ -156,6 +157,7 @@ struct TableParams<'a> {
     /// Header borders cannot be dragged.
     lock_widths: bool,
     selection: &'a Selection,
+    extras: &'a ContextExtras,
     sort: SortConfig,
     size_format: SizeFormat,
     date_format: &'a str,
@@ -215,9 +217,78 @@ fn pick(ui: &mut Ui, out: &mut Vec<(usize, ContextAction)>, row: usize, label: &
     }
 }
 
-fn context_menu(ui: &mut Ui, row: usize, renamable: bool, out: &mut Vec<(usize, ContextAction)>) {
+/// A launcher entry; clicking runs it.
+fn entry_button(
+    ui: &mut Ui,
+    out: &mut Vec<(usize, ContextAction)>,
+    row: usize,
+    index: usize,
+    entry: &MenuEntry,
+) {
+    if ui.button(&entry.label).clicked() {
+        out.push((row, ContextAction::Launch(index)));
+        ui.close();
+    }
+}
+
+/// Entries without a submenu directly, the others grouped under their submenu in order of first use.
+fn actions_section(
+    ui: &mut Ui,
+    out: &mut Vec<(usize, ContextAction)>,
+    row: usize,
+    offset: usize,
+    entries: &[MenuEntry],
+) {
+    let mut groups: Vec<(&str, Vec<(usize, &MenuEntry)>)> = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        match entry.submenu.as_deref() {
+            None => entry_button(ui, out, row, offset + i, entry),
+            Some(name) => match groups.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, items)) => items.push((offset + i, entry)),
+                None => groups.push((name, vec![(offset + i, entry)])),
+            },
+        }
+    }
+    for (name, items) in groups {
+        ui.menu_button(name, |ui| {
+            for (index, entry) in items {
+                entry_button(ui, out, row, index, entry);
+            }
+        });
+    }
+}
+
+fn context_menu(
+    ui: &mut Ui,
+    row: usize,
+    renamable: bool,
+    online: bool,
+    extras: &ContextExtras,
+    out: &mut Vec<(usize, ContextAction)>,
+) {
     pick(ui, out, row, "Open", ContextAction::Open);
+    if !extras.open_with().is_empty() {
+        ui.menu_button("Open with", |ui| {
+            for (i, entry) in extras.open_with().iter().enumerate() {
+                entry_button(ui, out, row, i, entry);
+            }
+        });
+    }
     pick(ui, out, row, "Open containing folder", ContextAction::OpenFolder);
+    if !extras.actions().is_empty() {
+        ui.separator();
+        actions_section(ui, out, row, extras.open_with, extras.actions());
+    }
+    if !extras.entries.is_empty() {
+        ui.menu_button("Hide an entry", |ui| {
+            for (i, entry) in extras.entries.iter().enumerate() {
+                if ui.button(&entry.label).clicked() {
+                    out.push((row, ContextAction::HideEntry(i)));
+                    ui.close();
+                }
+            }
+        });
+    }
     ui.separator();
     pick(
         ui,
@@ -227,6 +298,7 @@ fn context_menu(ui: &mut Ui, row: usize, renamable: bool, out: &mut Vec<(usize, 
         ContextAction::Copy(CopyKind::FullPath),
     );
     pick(ui, out, row, "Copy name", ContextAction::Copy(CopyKind::Name));
+    pick(ui, out, row, "Copy file", ContextAction::CopyFiles);
     pick(
         ui,
         out,
@@ -240,6 +312,13 @@ fn context_menu(ui: &mut Ui, row: usize, renamable: bool, out: &mut Vec<(usize, 
         .on_disabled_hover_text("Rename needs a single item on an online volume");
     if rename.clicked() {
         out.push((row, ContextAction::Rename));
+        ui.close();
+    }
+    let trash = ui
+        .add_enabled(online, egui::Button::new("Move to Trash"))
+        .on_disabled_hover_text("The volume is offline");
+    if trash.clicked() {
+        out.push((row, ContextAction::Trash));
         ui.close();
     }
     pick(ui, out, row, "Properties…", ContextAction::Properties);
@@ -343,7 +422,9 @@ fn draw_table(
                 if resp.secondary_clicked() {
                     out.cell_events.push((idx, col.id, CellEvent::Secondary));
                 }
-                resp.context_menu(|ui| context_menu(ui, idx, renamable, &mut out.context));
+                resp.context_menu(|ui| {
+                    context_menu(ui, idx, renamable, !cached.offline, p.extras, &mut out.context);
+                });
             }
         });
     });
@@ -375,6 +456,7 @@ impl App {
             columns: &columns,
             lock_widths: self.config.ui.lock_column_widths,
             selection: &self.selection,
+            extras: &self.context_extras,
             sort: self.config.ui.sort,
             size_format: self.config.ui.size_format,
             date_format: &self.config.ui.date_format,
