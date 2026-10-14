@@ -17,8 +17,10 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   names, "Show more" up to 8 MiB, a virtualised selectable text view with Wrap and line-number
   toggles, and `Ctrl+C` copying selected preview text. Syntax highlighting is still deferred.
 - Phase C (several search bars combined with AND, `SearchRequest.texts`).
-- 0.5.1: tabs (`Ctrl+T`, each with its own bars, list and selection), an empty search lists nothing and
+- 0.6.0: tabs (`Ctrl+T`, each with its own bars, list and selection), an empty search lists nothing and
   `*` lists everything. Search bar shortcuts moved to `Ctrl+Shift+T`/`Ctrl+Shift+W`; config version 2.
+  Window resizes only change the Path column, with View → Columns → Lock column widths
+  (`ui.lock_column_widths`); the text preview has a Copy button and a right-click menu.
 
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
