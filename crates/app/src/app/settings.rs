@@ -117,6 +117,12 @@ impl App {
         self.config_changed();
     }
 
+    pub(crate) fn toggle_lock_column_widths(&mut self) {
+        let ui = &mut self.config.ui;
+        ui.lock_column_widths = !ui.lock_column_widths;
+        self.config_changed();
+    }
+
     /// Header click: sorts by `column`, flipping the direction if it is already the sort column.
     pub(crate) fn sort_by(&mut self, column: ColumnId) {
         let sort = &mut self.config.ui.sort;
@@ -175,6 +181,16 @@ mod tests {
         assert!(last.options.match_path && last.options.regex && last.options.case_sensitive);
         let saved = t.fake.last_saved_config().expect("saved");
         assert!(saved.search.match_path && saved.search.regex && saved.search.case_sensitive);
+    }
+
+    #[test]
+    fn locking_column_widths_persists() {
+        let mut t = TestApp::new();
+        assert!(!t.app.config.ui.lock_column_widths);
+        t.app.toggle_lock_column_widths();
+        assert!(t.fake.last_saved_config().expect("saved").ui.lock_column_widths);
+        t.app.toggle_lock_column_widths();
+        assert!(!t.fake.last_saved_config().expect("saved").ui.lock_column_widths);
     }
 
     #[test]

@@ -142,9 +142,19 @@ pub(crate) struct TableOutput {
     pub(crate) editor_drawn: bool,
 }
 
+/// Index of the column that follows the window width: Path, or the last column without it.
+fn flexible_column(columns: &[ColumnConfig]) -> usize {
+    columns
+        .iter()
+        .position(|c| c.id == ColumnId::Path)
+        .unwrap_or(columns.len().saturating_sub(1))
+}
+
 struct TableParams<'a> {
     view: &'a ResultsView,
     columns: &'a [ColumnConfig],
+    /// Header borders cannot be dragged.
+    lock_widths: bool,
     selection: &'a Selection,
     sort: SortConfig,
     size_format: SizeFormat,
@@ -262,16 +272,17 @@ fn draw_table(
     let mut builder = TableBuilder::new(ui)
         .id_salt(salt)
         .striped(true)
-        .resizable(true)
+        .resizable(!p.lock_widths)
         .sense(Sense::click())
         .cell_layout(Layout::left_to_right(Align::Center))
         .auto_shrink([false, false])
         .max_scroll_height(f32::INFINITY);
-    // The last column takes whatever width is left, so it is never pushed off-screen when the
-    // saved widths add up to more than the window.
-    let last = p.columns.len().saturating_sub(1);
+    // One column takes whatever width is left, so the others keep the widths the user chose and
+    // the flexible one is never pushed off-screen when the saved widths add up to more than the
+    // window.
+    let flexible = flexible_column(p.columns);
     for (i, col) in p.columns.iter().enumerate() {
-        let column = if i == last {
+        let column = if i == flexible {
             Column::remainder().at_least(60.0)
         } else {
             Column::initial(col.width.max(40.0)).at_least(40.0)
@@ -290,15 +301,16 @@ fn draw_table(
         }
     });
     table.body(|body| {
-        // The last column is `remainder`: its width follows the window and the preview pane, so
-        // it says nothing about what the user chose and must not be written back to the config
+        // The flexible column is `remainder`: its width follows the window and the preview pane,
+        // so it says nothing about what the user chose and must not be written back to the config
         // (that would save the config on every pane or window resize).
         out.widths = p
             .columns
             .iter()
             .zip(body.widths())
-            .take(p.columns.len().saturating_sub(1))
-            .map(|(c, w)| (c.id, *w))
+            .enumerate()
+            .filter(|&(i, _)| i != flexible)
+            .map(|(_, (c, w))| (c.id, *w))
             .collect();
         body.rows(ROW_HEIGHT, p.view.len(), |mut row| {
             let idx = row.index();
@@ -361,6 +373,7 @@ impl App {
         let params = TableParams {
             view: &view,
             columns: &columns,
+            lock_widths: self.config.ui.lock_column_widths,
             selection: &self.selection,
             sort: self.config.ui.sort,
             size_format: self.config.ui.size_format,
@@ -490,5 +503,28 @@ mod tests {
         let row = build_row(&view, 0, &*t.app.backend, SizeFormat::Binary, "%Y");
         assert!(row.offline);
         t.app.cache.invalidate();
+    }
+
+    #[test]
+    fn path_is_the_flexible_column_wherever_it_sits() {
+        let col = |id| ColumnConfig {
+            id,
+            width: 100.0,
+            visible: true,
+        };
+        let default = [
+            ColumnId::Name,
+            ColumnId::Path,
+            ColumnId::Type,
+            ColumnId::Modified,
+            ColumnId::Size,
+        ]
+        .map(col);
+        assert_eq!(flexible_column(&default), 1, "Size at the end does not stretch");
+        let reordered = [ColumnId::Path, ColumnId::Size, ColumnId::Name].map(col);
+        assert_eq!(flexible_column(&reordered), 0);
+        let no_path = [ColumnId::Name, ColumnId::Size].map(col);
+        assert_eq!(flexible_column(&no_path), 1, "falls back to the last column");
+        assert_eq!(flexible_column(&[]), 0);
     }
 }

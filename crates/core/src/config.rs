@@ -239,6 +239,9 @@ pub enum Theme {
 pub struct UiConfig {
     /// Columns in display order.
     pub columns: Vec<ColumnConfig>,
+    /// Keep the column widths as saved: the header borders can no longer be dragged. Path (or the
+    /// last visible column if Path is hidden) still follows the window width.
+    pub lock_column_widths: bool,
     /// Sort order.
     pub sort: SortConfig,
     /// Preview pane.
@@ -271,6 +274,7 @@ impl Default for UiConfig {
                 col(ColumnId::Modified, 150.0),
                 col(ColumnId::Size, 90.0),
             ],
+            lock_column_widths: false,
             sort: SortConfig::default(),
             preview_pane: PreviewPaneConfig::default(),
             properties_target: PropertiesTarget::default(),
@@ -525,5 +529,12 @@ mod tests {
         assert!((pane.width - 400.0).abs() < f32::EPSILON);
         assert!(!pane.resizable, "fixed width unless asked for");
         assert!(pane.wrap_text && !pane.line_numbers);
+    }
+
+    #[test]
+    fn column_widths_are_unlocked_when_missing() {
+        let config = Config::from_json(r#"{ "ui": { "columns": [] } }"#, Path::new("c.json"))
+            .expect("old config loads");
+        assert!(!config.ui.lock_column_widths);
     }
 }

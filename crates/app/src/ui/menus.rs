@@ -114,6 +114,11 @@ impl App {
                     commands.push(Command::ToggleColumn(col.id));
                 }
             }
+            ui.separator();
+            let mut locked = cfg.lock_column_widths;
+            if ui.checkbox(&mut locked, "Lock column widths").changed() {
+                commands.push(Command::ToggleLockColumnWidths);
+            }
         });
         ui.menu_button("Theme", |ui| {
             for (theme, label) in [
