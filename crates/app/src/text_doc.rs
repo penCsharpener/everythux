@@ -157,6 +157,12 @@ impl TextDoc {
                 }
                 continue;
             }
+            if line_text.len() <= columns && !line_text.contains('\t') {
+                // Every character but a tab takes at most as many columns as it has bytes.
+                self.rows.push(row(start, end));
+                self.max_columns = self.max_columns.max(line_text.chars().map(char_columns).sum());
+                continue;
+            }
             let mut row_start = start;
             let mut used = 0;
             for (offset, c) in line_text.char_indices() {

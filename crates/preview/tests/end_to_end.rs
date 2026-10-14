@@ -379,7 +379,7 @@ fn regression_fixtures_preview_as_readable_text() {
     );
     let windows_1252 = b"Gr\xfc\xdfe aus K\xf6ln \x96 12 \x80 bezahlt\r\nZeile 2\r\n".to_vec();
     let mut log = Vec::new();
-    for i in 0..100_000u32 {
+    for i in 0..120_000u32 {
         log.extend(format!("[{i:08}] worker-{} finished job in {} ms\n", i % 16, i % 997).as_bytes());
     }
 

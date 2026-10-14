@@ -67,6 +67,21 @@ Install them with your package manager, for example `sudo apt install poppler-ut
 `sudo pacman -S poppler ffmpeg`. Files larger than `ui.preview_pane.max_file_size` are never previewed.
 Thumbnails that your file manager already generated (`~/.cache/thumbnails`) are used first.
 
+### Text files
+
+Text previews detect UTF-8 (with or without BOM), UTF-16 and UTF-32 (with a BOM, or without one
+for mostly-ASCII text) and fall back to Windows-1252 for legacy 8-bit files. The header under the
+file name shows the detected encoding. Files are recognised by about 160 extensions, by names such
+as `Dockerfile`, `Jenkinsfile`, `LICENSE` or `.bashrc`, and otherwise by their content.
+
+- **"Binary file" / "No preview available for this file type":** the content has NUL bytes or too
+  many invalid characters for any of these encodings. Other legacy encodings (Shift-JIS, KOI8-R, …)
+  are not detected.
+- **Only part of the file is shown:** the preview loads the first 64 KiB. **Show more** loads 256 KiB
+  at a time, up to 8 MiB; open the file for the rest.
+- **`Ctrl+C` copies the path instead of the selected text:** click into the preview text first, or
+  select with the mouse; a click in the result list ends the text selection on purpose.
+
 ## Rebuilding a corrupt or unwanted index
 
 The index is only a cache of what is on disk, so it is always safe to rebuild:

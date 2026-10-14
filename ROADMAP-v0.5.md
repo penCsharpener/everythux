@@ -132,15 +132,18 @@ reporter should confirm which files failed for them (see Open questions).
      32-entry table for 0x80–0x9F plus Latin-1 for the rest. This is a small hand-written module
      with tests; `encoding_rs` is only worth adding if more encodings are requested.
   5. Otherwise it is binary, and the preview is `Unavailable { hint: "Binary file" }`.
-- `PreviewContent::Text` gains `encoding: &'static str` and `total_bytes: u64`, so the header can show
+- `PreviewContent::Text` gains `encoding: TextEncoding` (an enum whose `name()` is the display
+  string), `total_bytes: u64` and `end_offset: u64` (where the next chunk starts), so the header can show
   "UTF-16 LE · 1.2 MiB · showing first 64 KiB". `PreviewContent` is `#[non_exhaustive]`, but its
   fields are matched in the app, so the app is updated in the same commit.
 - **Recognition:** add the extensions in gap 3, plus a `KNOWN_TEXT_FILENAMES` table matched on
   the whole name (case-insensitive). The sniff accepts UTF-16 per step 2.
 - **More content:** a "Show more" button under truncated text requests the next 256 KiB, through a
-  new `PreviewService::request_range(path, offset, len)` or a `TextWindow` request variant, and
-  appends it. It stops at a hard cap of 8 MiB per file. Large text is rendered line by line with
-  `ScrollArea::show_rows` so the frame budget holds (ROADMAP §9: `update()` under 4 ms).
+  new `PreviewService::request_range(path, offset, len, encoding)` on the preview worker, and
+  appends it. It stops at a hard cap of 8 MiB per file. Large text is split into display rows once
+  (`app/text_doc.rs`) and only the rows in view are laid out (`ScrollArea::show_viewport`), so the
+  frame budget holds (ROADMAP §9: `update()` under 4 ms). Selection is a byte range of the whole
+  text, so `Ctrl+A`/`Ctrl+C` also cover rows scrolled out of view.
 - **Rendering** (`app/ui/preview_pane.rs`):
   - Monospace, a tab width of 4 spaces, an optional line-number gutter, and a **Wrap** toggle in the
     pane header (default on; saved as `ui.preview_pane.wrap_text`).
@@ -154,15 +157,19 @@ reporter should confirm which files failed for them (see Open questions).
   UI-agnostic. Skip it if the size or startup cost is too high.
 
 ### Tasks
-- [ ] Ask the reporter which files didn't preview, and add each one as a regression fixture.
-- [ ] `preview/textfile.rs`: BOM, UTF-16/32, UTF-8 and Windows-1252 decoding, with the improved
+- [x] Ask the reporter which files didn't preview, and add each one as a regression fixture.
+      Not asked; instead generated fixtures cover every gap above (UTF-16 LE/BE with and without
+      BOM, UTF-32, Windows-1252, `.csproj`, `Dockerfile`, extension-less names, a 5 MB log) in
+      `crates/preview/tests/end_to_end.rs`. Add the reporter's files when they answer.
+- [x] `preview/textfile.rs`: BOM, UTF-16/32, UTF-8 and Windows-1252 decoding, with the improved
       binary check.
-- [ ] `preview/kind.rs`: the new extensions and the `KNOWN_TEXT_FILENAMES` table.
-- [ ] `PreviewContent::Text { encoding, total_bytes }` and the header line in the app.
-- [ ] "Show more" range requests with the 8 MiB cap; `show_rows` rendering for large text.
-- [ ] Wrap toggle and line numbers; `Ctrl+C`/`Ctrl+A` routed to preview text when it has focus.
+- [x] `preview/kind.rs`: the new extensions and the `KNOWN_TEXT_FILENAMES` table.
+- [x] `PreviewContent::Text { encoding, total_bytes }` and the header line in the app.
+- [x] "Show more" range requests with the 8 MiB cap; `show_rows` rendering for large text.
+- [x] Wrap toggle and line numbers; `Ctrl+C`/`Ctrl+A` routed to preview text when it has focus.
 - [ ] (Stretch) `highlight` feature with `syntect`; measure the binary size delta before enabling.
-- [ ] Docs: update the Preview pane section in `docs/shortcuts.md` and `docs/troubleshooting.md`.
+      Deferred: not part of the v0.5 Phase B implementation.
+- [x] Docs: update the Preview pane section in `docs/shortcuts.md` and `docs/troubleshooting.md`.
 
 ### Tests
 - `preview` unit tests with generated fixtures:

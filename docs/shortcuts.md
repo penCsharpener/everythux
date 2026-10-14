@@ -18,9 +18,11 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 | `F2` | row | Rename the selected file or folder inline. The name without its extension is preselected |
 | `Enter` or `Tab` | rename editor | Commit the new name. A second `Enter` is needed after a warning (changed extension, leading or trailing space) |
 | `Esc` | rename editor | Cancel the rename |
-| `Ctrl+C` | row | Copy the full path |
+| `Ctrl+C` | row | Copy the full path (only while no text is selected in the preview and no text field has the focus) |
 | `Ctrl+Shift+C` | row | Copy the folder path |
 | Arrow keys, `PageUp`, `PageDown`, `Home`, `End` | result list | Move the selection |
+| `Ctrl+A` | preview text (clicked) | Select all loaded text of the preview |
+| `Ctrl+C` | preview text (clicked or with a selection) | Copy the selected preview text |
 
 ## Mouse
 
@@ -38,6 +40,12 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 | `Shift+Click` | row | Extend the selection (a range). `Ctrl+Shift+Click` is taken by the exclusion action |
 
 ## Notes
+
+- **Preview pane text:** click into the text to give it the keyboard, drag to select, `Shift+Click` to
+  extend. While it has the focus or a selection, `Ctrl+A` and `Ctrl+C` act on the text; clicking a row
+  in the result list ends the selection, and `Ctrl+C` copies paths again. The header shows the
+  encoding and how much of the file is loaded; **Show more** loads the next 256 KiB, up to 8 MiB.
+  **Wrap** and **Line numbers** in the header are saved in the config.
 
 - **Renaming** works on one entry at a time, on online volumes only. Clicking elsewhere also commits
   the name; an unchanged name does nothing. Names that are empty, `.`/`..`, contain `/` or are longer than
