@@ -28,6 +28,7 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 |-------|---------|--------|
 | Click on a column header | header | Sort by that column. Click again to reverse |
 | Drag a header edge | header | Resize the column |
+| Drag the preview pane edge | preview pane | Resize the pane. Only when View → Preview pane → **Allow resizing by dragging** is on; otherwise the width is fixed and set in the same menu |
 | Double-click | Name cell | Open the file with its default application |
 | Double-click | Path cell | Open the containing folder in the file manager, with the file selected |
 | Double-click | Size or Modified cell | Open the folder's properties |

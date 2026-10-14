@@ -42,6 +42,7 @@ impl App {
         self.properties_windows(ctx);
         self.shortcuts_window(ctx);
         self.about_window(ctx);
+        self.preview_width_window(ctx);
     }
 
     fn confirm_reindex_modal(&mut self, ctx: &Context) {

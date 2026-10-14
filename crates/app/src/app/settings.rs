@@ -102,6 +102,21 @@ impl App {
         self.config_changed();
     }
 
+    /// Sets the fixed preview pane width (menu presets and the Custom… window) and persists it.
+    pub(crate) fn set_preview_width(&mut self, width: f32) {
+        let pane = &mut self.config.ui.preview_pane;
+        if width.is_finite() && (pane.width - width).abs() > 0.5 {
+            pane.width = width;
+            self.config_changed();
+        }
+    }
+
+    pub(crate) fn toggle_preview_resizable(&mut self) {
+        let pane = &mut self.config.ui.preview_pane;
+        pane.resizable = !pane.resizable;
+        self.config_changed();
+    }
+
     /// Header click: sorts by `column`, flipping the direction if it is already the sort column.
     pub(crate) fn sort_by(&mut self, column: ColumnId) {
         let sort = &mut self.config.ui.sort;

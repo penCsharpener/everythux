@@ -483,8 +483,10 @@ fn clicking_inside_the_preview_pane_keeps_selection_and_preview() {
 }
 
 #[test]
-fn dragging_the_preview_pane_edge_keeps_selection_and_preview() {
+fn resizable_mode_keeps_todays_drag_behaviour() {
     let mut r = preview_rig();
+    r.harness.state_mut().config.ui.preview_pane.resizable = true;
+    r.harness.run_steps(2);
     let start_width = r.harness.state().config.ui.preview_pane.width;
     let edge_x = WINDOW_WIDTH - start_width;
     let y = 300.0;
@@ -623,6 +625,216 @@ fn a_background_reindex_keeps_the_selected_entry_and_its_preview() {
     assert!(preview_calls(&r).is_empty(), "{:?}", preview_calls(&r));
     assert!(app.preview.shown.is_some(), "preview dropped");
     assert!(r.harness.query_by_label("hello from the preview pane").is_some());
+}
+
+// --- Fixed preview pane width (v0.5 Phase A) ------------------------------------------------
+
+fn pane_width(r: &Rig) -> f32 {
+    r.harness.state().preview.pane_rect.expect("pane shown").width()
+}
+
+fn assert_pane_width(r: &Rig, expected: f32, what: &str) {
+    let app = r.harness.state();
+    let pane = app.preview.pane_rect.expect("pane shown");
+    let content = app.preview.content_rect.expect("pane content");
+    assert!(
+        (pane.width() - expected).abs() <= 1.0,
+        "{what}: pane is {} px wide, expected {expected}",
+        pane.width()
+    );
+    let screen = r.harness.ctx.content_rect();
+    assert!(
+        pane.max.x <= screen.max.x + 1.0,
+        "{what}: the pane {pane:?} was pushed out of the window {screen:?}"
+    );
+    assert!(
+        content.min.x >= pane.min.x - 1.0 && content.max.x <= pane.max.x + 1.0,
+        "{what}: content {content:?} overflows the pane {pane:?}"
+    );
+}
+
+fn rgba(width: u32, height: u32) -> everythux_preview::ImageData {
+    everythux_preview::ImageData {
+        width,
+        height,
+        rgba: vec![200; (width * height * 4) as usize],
+    }
+}
+
+#[test]
+fn fixed_width_pane_has_exact_width_for_every_content_kind() {
+    use everythux_preview::{MediaMeta, PreviewContent, PreviewResult};
+
+    let mut r = rig();
+    r.harness.state_mut().config.ui.preview_pane.enabled = true;
+    let long_name = format!("{}.txt", "a-very-long-file-name-".repeat(14));
+    let mut b = crate::testkit::SnapshotBuilder::new();
+    let dir = b.dir(&format!("/home/me/{}", "deeply-nested-folder/".repeat(12)), None);
+    let entry = b.file(dir, &long_name, 1234, 1_700_000_000_000_000_000);
+    let snapshot = b.finish();
+    let generation = r.harness.state().search.latest_generation;
+    r.fake.send_results(generation, &snapshot, &[entry], None);
+    r.harness.run_steps(3);
+    r.harness.state_mut().selection.select_only(0);
+    r.harness.run_steps(20);
+    let (path, id) = r.harness.state().preview.requested.clone().expect("requested");
+    assert_pane_width(&r, 360.0, "loading");
+
+    let long_meta = MediaMeta {
+        title: Some("A title that goes on and on ".repeat(20)),
+        artist: Some("Someone with a remarkably long name ".repeat(10)),
+        album: None,
+        duration: Some(std::time::Duration::from_secs(4000)),
+        extra: vec![("Codec".to_owned(), "x".repeat(500))],
+    };
+    let contents = [
+        PreviewContent::Image {
+            image: rgba(2000, 40),
+            original_size: Some((2000, 40)),
+        },
+        PreviewContent::Pdf {
+            page: rgba(2000, 80),
+            pages: Some(1),
+        },
+        PreviewContent::Text {
+            text: format!("{}\nshort line\n", "0123456789".repeat(1000)),
+            truncated: false,
+        },
+        PreviewContent::Audio {
+            meta: long_meta.clone(),
+            cover: Some(rgba(2000, 2000)),
+        },
+        PreviewContent::Video {
+            meta: long_meta,
+            thumbnail: Some(rgba(2000, 100)),
+        },
+        PreviewContent::Folder { children: Some(12) },
+        PreviewContent::Unavailable {
+            hint: "A hint that is much longer than the pane is wide ".repeat(10),
+        },
+    ];
+    for content in contents {
+        let what = format!("{content:?}").chars().take(40).collect::<String>();
+        r.fake.send(BackendEvent::Preview(PreviewResult {
+            request: id,
+            path: path.clone(),
+            content,
+        }));
+        r.harness.run_steps(3);
+        assert_pane_width(&r, 360.0, &what);
+    }
+}
+
+#[test]
+fn fixed_width_pane_has_no_resize_handle() {
+    let mut r = preview_rig();
+    let edge_x = WINDOW_WIDTH - 360.0;
+    let y = 300.0;
+    r.harness.hover_at(egui::pos2(edge_x, y));
+    r.harness.run_steps(2);
+    r.harness.drag_at(egui::pos2(edge_x, y));
+    r.harness.run_steps(2);
+    for step in 1..=10 {
+        r.harness.hover_at(egui::pos2(edge_x - 10.0 * step as f32, y));
+        r.harness.run_steps(1);
+        assert_pane_width(&r, 360.0, &format!("drag step {step}"));
+    }
+    r.harness.drop_at(egui::pos2(edge_x - 100.0, y));
+    r.harness.run_steps(15);
+    assert_pane_width(&r, 360.0, "after the drag");
+    assert!((r.harness.state().config.ui.preview_pane.width - 360.0).abs() < f32::EPSILON);
+    assert_eq!(saved_widths(&r), Vec::<f32>::new(), "nothing saved");
+    assert_preview_untouched(&r, "after the drag");
+}
+
+#[test]
+fn choosing_a_preset_sets_and_saves_the_width_once() {
+    let mut r = preview_rig();
+    r.harness.get_by_label("View").click();
+    r.harness.run_steps(3);
+    r.harness.get_by_label("Preview pane ⏵").click();
+    r.harness.run_steps(3);
+    r.harness.get_by_label("Wide (520 px)").click();
+    r.harness.run_steps(5);
+    assert!((r.harness.state().config.ui.preview_pane.width - 520.0).abs() < f32::EPSILON);
+    assert_eq!(saved_widths(&r), [520.0], "saved exactly once");
+    assert_pane_width(&r, 520.0, "after choosing Wide");
+}
+
+#[test]
+fn a_preset_also_applies_in_resizable_mode() {
+    let mut r = preview_rig();
+    r.harness.state_mut().config.ui.preview_pane.resizable = true;
+    r.harness.run_steps(3);
+    r.harness
+        .state_mut()
+        .run_command(crate::app::Command::SetPreviewWidth(720));
+    r.harness.run_steps(3);
+    assert_pane_width(&r, 720.0, "resizable pane follows the menu");
+}
+
+#[test]
+fn custom_width_window_opens_and_closes_with_escape() {
+    let mut r = preview_rig();
+    r.harness
+        .state_mut()
+        .run_command(crate::app::Command::CustomPreviewWidth);
+    r.harness.run_steps(3);
+    assert!(r.harness.query_by_label("Preview pane width").is_some());
+    r.harness.key_press(Key::Escape);
+    r.harness.run_steps(3);
+    assert!(!r.harness.state().preview.width_window);
+    assert!(r.harness.query_by_label("Preview pane width").is_none());
+    assert_eq!(
+        saved_widths(&r),
+        Vec::<f32>::new(),
+        "opening and closing changes nothing"
+    );
+}
+
+#[test]
+fn allow_resizing_checkbox_toggles_and_persists() {
+    let mut r = rig();
+    r.harness.run_steps(2);
+    r.harness.get_by_label("View").click();
+    r.harness.run_steps(3);
+    r.harness.get_by_label("Preview pane ⏵").click();
+    r.harness.run_steps(3);
+    r.harness.get_by_label("Allow resizing by dragging").click();
+    r.harness.run_steps(3);
+    assert!(r.harness.state().config.ui.preview_pane.resizable);
+    assert!(
+        r.fake
+            .last_saved_config()
+            .expect("saved")
+            .ui
+            .preview_pane
+            .resizable
+    );
+}
+
+#[test]
+fn narrow_window_shrinks_the_pane_without_changing_config() {
+    let mut r = preview_rig();
+    r.harness.set_size(Vec2::new(600.0, 600.0));
+    r.harness.run_steps(5);
+    let squeezed = pane_width(&r);
+    assert!(
+        (250.0..=300.0).contains(&squeezed),
+        "a 600 px window keeps 300 px for the table, pane is {squeezed}"
+    );
+    // Clicking around while squeezed must not adopt the squeezed width either.
+    r.harness
+        .query_all_by_label("notes.txt")
+        .min_by(|a, b| a.rect().min.x.total_cmp(&b.rect().min.x))
+        .expect("the table cell")
+        .click();
+    r.harness.run_steps(3);
+    r.harness.set_size(Vec2::new(WINDOW_WIDTH, 600.0));
+    r.harness.run_steps(5);
+    assert_pane_width(&r, 360.0, "back to the fixed width");
+    assert!((r.harness.state().config.ui.preview_pane.width - 360.0).abs() < f32::EPSILON);
+    assert_eq!(saved_widths(&r), Vec::<f32>::new());
 }
 
 // --- Inline rename ------------------------------------------------------------------------

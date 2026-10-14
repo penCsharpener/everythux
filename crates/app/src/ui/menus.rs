@@ -5,6 +5,7 @@ use everythux_core::config::{SizeFormat, Theme};
 
 use crate::app::{App, Command};
 use crate::keys::describe_shortcut;
+use crate::ui::preview_pane::WIDTH_PRESETS;
 
 fn item(ui: &mut Ui, label: &str, shortcut: &str, commands: &mut Vec<Command>, command: Command) {
     if ui.add(Button::new(label).shortcut_text(shortcut)).clicked() {
@@ -105,14 +106,7 @@ impl App {
 
     fn view_menu(&self, ui: &mut Ui, commands: &mut Vec<Command>) {
         let cfg = &self.config.ui;
-        toggle(
-            ui,
-            "Preview pane",
-            &describe_shortcut(self.bindings.toggle_preview),
-            cfg.preview_pane.enabled,
-            commands,
-            Command::TogglePreview,
-        );
+        ui.menu_button("Preview pane", |ui| self.preview_pane_menu(ui, commands));
         ui.menu_button("Columns", |ui| {
             for col in &cfg.columns {
                 let mut visible = col.visible;
@@ -145,5 +139,47 @@ impl App {
                 }
             }
         });
+    }
+
+    fn preview_pane_menu(&self, ui: &mut Ui, commands: &mut Vec<Command>) {
+        let pane = &self.config.ui.preview_pane;
+        toggle(
+            ui,
+            "Show preview pane",
+            &describe_shortcut(self.bindings.toggle_preview),
+            pane.enabled,
+            commands,
+            Command::TogglePreview,
+        );
+        ui.separator();
+        let mut is_preset = false;
+        for (label, width) in WIDTH_PRESETS {
+            let on = (pane.width - f32::from(width)).abs() < 0.5;
+            is_preset |= on;
+            if ui
+                .add(Button::selectable(on, format!("{label} ({width} px)")))
+                .clicked()
+            {
+                commands.push(Command::SetPreviewWidth(width));
+                ui.close();
+            }
+        }
+        let custom = if is_preset {
+            "Custom…".to_owned()
+        } else {
+            format!("Custom ({} px)…", pane.width.round())
+        };
+        if ui.add(Button::selectable(!is_preset, custom)).clicked() {
+            commands.push(Command::CustomPreviewWidth);
+            ui.close();
+        }
+        ui.separator();
+        let mut resizable = pane.resizable;
+        if ui
+            .checkbox(&mut resizable, "Allow resizing by dragging")
+            .changed()
+        {
+            commands.push(Command::TogglePreviewResizable);
+        }
     }
 }

@@ -39,6 +39,12 @@ pub(crate) struct PreviewState {
     pub(crate) shown: Option<PreviewShown>,
     /// The pane was resized and the new width is not saved yet.
     pub(crate) width_dirty: bool,
+    /// The "Custom…" pane width window is open.
+    pub(crate) width_window: bool,
+    /// Outer rect of the pane in the last frame.
+    pub(crate) pane_rect: Option<egui::Rect>,
+    /// Rect covered by the pane's content in the last frame (wider than the pane if it overflowed).
+    pub(crate) content_rect: Option<egui::Rect>,
 }
 
 impl PreviewState {

@@ -18,6 +18,12 @@ pub(crate) enum Command {
     QuickRescan,
     CancelJob,
     TogglePreview,
+    /// View → Preview pane → a width preset, in logical pixels.
+    SetPreviewWidth(u16),
+    /// View → Preview pane → Custom….
+    CustomPreviewWidth,
+    /// View → Preview pane → Allow resizing by dragging.
+    TogglePreviewResizable,
     FocusSearch,
     ToggleMatchPath,
     ToggleCaseSensitive,
@@ -65,6 +71,12 @@ impl App {
             }
             Command::CancelJob => self.backend.cancel_job(),
             Command::TogglePreview => self.toggle_preview_pane(),
+            Command::SetPreviewWidth(width) => self.set_preview_width(f32::from(width)),
+            Command::CustomPreviewWidth => {
+                self.preview.width_window = true;
+                self.open_popup(PopupId::PreviewWidth);
+            }
+            Command::TogglePreviewResizable => self.toggle_preview_resizable(),
             Command::FocusSearch => self.search.focus_requested = true,
             Command::ToggleMatchPath => self.toggle_match_path(),
             Command::ToggleCaseSensitive => self.toggle_case_sensitive(),

@@ -69,6 +69,7 @@ pub(crate) enum PopupId {
     Properties(u64),
     Shortcuts,
     About,
+    PreviewWidth,
 }
 
 /// All secondary windows. `order` is the z-order, topmost last.

@@ -14,6 +14,7 @@ impl App {
             PopupId::Properties(n) => w.properties.iter().any(|p| p.id == n && p.open),
             PopupId::Shortcuts => w.shortcuts,
             PopupId::About => w.about,
+            PopupId::PreviewWidth => self.preview.width_window,
         }
     }
 
@@ -33,6 +34,7 @@ impl App {
             PopupId::Properties(n) => self.windows.properties.retain(|p| p.id != n),
             PopupId::Shortcuts => self.windows.shortcuts = false,
             PopupId::About => self.windows.about = false,
+            PopupId::PreviewWidth => self.preview.width_window = false,
         }
         self.windows.order.retain(|p| *p != id);
     }

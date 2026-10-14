@@ -1,16 +1,58 @@
 //! The optional preview pane on the right.
+//!
+//! The pane has a fixed width taken from the config (View → Preview pane). Nothing it shows may
+//! change that width: every content kind is laid out inside it, truncating, scaling or scrolling
+//! what does not fit.
 
+use std::ops::RangeInclusive;
 use std::time::Duration;
 
-use egui::{RichText, ScrollArea, Ui};
+use egui::containers::panel::PanelState;
+use egui::{Align, Label, Layout, RichText, ScrollArea, Ui, Vec2};
 use everythux_preview::{MediaMeta, PreviewContent};
 
-use crate::app::{App, Effect};
+use crate::app::{App, Effect, PopupId};
 use crate::format::{format_local, format_size};
+use crate::keys::describe_shortcut;
 use crate::preview::PreviewShown;
 
-/// Allowed pane width in logical pixels.
-const PANE_WIDTH_RANGE: std::ops::RangeInclusive<f32> = 160.0..=1000.0;
+/// Narrowest and widest pane in logical pixels.
+const PANE_WIDTH_RANGE: RangeInclusive<f32> = 160.0..=1200.0;
+/// Width the result table keeps when the window is too narrow for the pane.
+const TABLE_MIN_WIDTH: f32 = 300.0;
+/// Width of the key column of the media metadata.
+const META_KEY_WIDTH: f32 = 80.0;
+/// Range of the "Custom…" width editor.
+pub(crate) const CUSTOM_WIDTH_RANGE: RangeInclusive<f32> = 200.0..=1200.0;
+/// The width presets of View → Preview pane.
+pub(crate) const WIDTH_PRESETS: [(&str, u16); 4] = [
+    ("Narrow", 280),
+    ("Medium", 360),
+    ("Wide", 520),
+    ("Extra wide", 720),
+];
+
+fn panel_id() -> egui::Id {
+    egui::Id::new("everythux_preview")
+}
+
+/// The width the pane is shown at: the configured width, unless the window is too narrow to keep
+/// [`TABLE_MIN_WIDTH`] for the table. Then the pane gives way for this frame only.
+pub(crate) fn shown_width(configured: f32, available: f32) -> f32 {
+    let configured = if configured.is_finite() { configured } else { 360.0 };
+    let wanted = configured.clamp(*PANE_WIDTH_RANGE.start(), *PANE_WIDTH_RANGE.end());
+    let room = (available - TABLE_MIN_WIDTH).max(*PANE_WIDTH_RANGE.start());
+    wanted.min(room).min(available).max(0.0)
+}
+
+/// `size` scaled down (never up) to `max_width`, keeping the aspect ratio.
+fn fit_width(size: Vec2, max_width: f32) -> Vec2 {
+    if size.x <= max_width || size.x <= 0.0 {
+        size
+    } else {
+        size * (max_width / size.x)
+    }
+}
 
 fn format_media_duration(d: Duration) -> String {
     let total = d.as_secs();
@@ -41,21 +83,29 @@ fn meta_grid(ui: &mut Ui, meta: &MediaMeta) {
         ui.weak("No metadata");
         return;
     }
-    egui::Grid::new("preview_meta")
-        .num_columns(2)
-        .striped(true)
-        .show(ui, |ui| {
-            for (key, value) in rows {
-                ui.weak(key);
-                ui.add(egui::Label::new(value).wrap());
-                ui.end_row();
-            }
+    let row_height = ui.spacing().interact_size.y;
+    for (key, value) in rows {
+        ui.horizontal(|ui| {
+            ui.allocate_ui_with_layout(
+                Vec2::new(META_KEY_WIDTH, row_height),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.set_min_width(META_KEY_WIDTH);
+                    ui.add(Label::new(RichText::new(key).weak()).truncate());
+                },
+            );
+            // Truncated labels show the full value as a tooltip.
+            ui.add(Label::new(value).truncate());
         });
+    }
 }
 
 fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize) {
     if let Some(texture) = shown.textures.get(index) {
-        ui.add(egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture)).shrink_to_fit());
+        let size = fit_width(texture.size_vec2(), ui.available_width());
+        ui.add(
+            egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture)).fit_to_exact_size(size),
+        );
     }
 }
 
@@ -75,7 +125,7 @@ fn show_content(ui: &mut Ui, shown: &PreviewShown) {
         }
         PreviewContent::Text { text, truncated } => {
             ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                ui.add(egui::Label::new(RichText::new(text).monospace()).selectable(true));
+                ui.add(Label::new(RichText::new(text).monospace()).selectable(true));
                 if *truncated {
                     ui.weak("… (truncated)");
                 }
@@ -93,7 +143,7 @@ fn show_content(ui: &mut Ui, shown: &PreviewShown) {
             };
         }
         PreviewContent::Unavailable { hint } => {
-            ui.weak(hint);
+            ui.add(Label::new(RichText::new(hint).weak()).wrap());
         }
         _ => {
             ui.weak("No preview available");
@@ -103,19 +153,40 @@ fn show_content(ui: &mut Ui, shown: &PreviewShown) {
 
 impl App {
     pub(crate) fn show_preview_panel(&mut self, ui: &mut Ui) {
-        let width = self.config.ui.preview_pane.width;
-        let response = egui::Panel::right("everythux_preview")
-            .resizable(true)
-            .default_size(width)
-            .size_range(PANE_WIDTH_RANGE)
-            .show(ui, |ui| {
-                // A panel is only as wide as its content. Without this the pane would shrink to
-                // whatever the current preview needs (and to the minimum while empty), changing
-                // the layout on every selection change instead of staying where the user put it.
-                ui.take_available_width();
-                self.preview_pane(ui);
-            });
-        self.track_preview_width(response.response.rect.width(), ui.input(|i| i.pointer.any_down()));
+        let pane = &self.config.ui.preview_pane;
+        let width = shown_width(pane.width, ui.available_width());
+        let resizable = pane.resizable;
+        let pointer_down = ui.input(|i| i.pointer.any_down());
+        let panel = egui::Panel::right(panel_id());
+        let panel = if resizable {
+            // egui remembers the size of the last drag. A width chosen in the menu (or a window
+            // that grew back) wins over it whenever no drag is in progress.
+            let remembered = PanelState::load(ui.ctx(), panel_id()).map(|s| s.size().x);
+            if !pointer_down
+                && !self.preview.width_dirty
+                && remembered.is_some_and(|w| (w - width).abs() > 0.5)
+            {
+                ui.ctx().data_mut(|d| d.remove::<PanelState>(panel_id()));
+            }
+            panel
+                .resizable(true)
+                .default_size(width)
+                .size_range(PANE_WIDTH_RANGE)
+        } else {
+            panel.resizable(false).exact_size(width)
+        };
+        let response = panel.show(ui, |ui| {
+            // A panel is only as wide as its content. Without this the pane would shrink to
+            // whatever the current preview needs (and to the minimum while empty).
+            ui.take_available_width();
+            self.preview_pane(ui);
+            ui.min_rect()
+        });
+        self.preview.pane_rect = Some(response.response.rect);
+        self.preview.content_rect = Some(response.inner);
+        if resizable {
+            self.track_preview_width(response.response.rect.width(), pointer_down);
+        }
     }
 
     /// Follows a user resize of the pane and persists the final width once, on release.
@@ -135,6 +206,10 @@ impl App {
     }
 
     fn preview_pane(&mut self, ui: &mut Ui) {
+        // Every branch below lays out inside exactly this width.
+        let width = ui.available_width();
+        ui.set_max_width(width);
+        ui.set_min_width(width);
         let Some(view) = self.results.clone() else {
             return;
         };
@@ -148,12 +223,20 @@ impl App {
         let i = id.index();
 
         ui.add_space(4.0);
-        ui.add(egui::Label::new(RichText::new(String::from_utf8_lossy(snap.name(id))).strong()).wrap());
-        ui.weak(format!(
-            "{} · {}",
-            format_size(snap.entries.size[i], self.config.ui.size_format),
-            format_local(snap.entries.mtime_ns[i], &self.config.ui.date_format)
-        ));
+        // Truncated labels show the full text as a tooltip.
+        ui.add(Label::new(RichText::new(String::from_utf8_lossy(snap.name(id))).strong()).truncate());
+        ui.add(
+            Label::new(
+                RichText::new(format!(
+                    "{} · {} · {}",
+                    format_size(snap.entries.size[i], self.config.ui.size_format),
+                    format_local(snap.entries.mtime_ns[i], &self.config.ui.date_format),
+                    snap.parent_path(id).to_string_lossy()
+                ))
+                .weak(),
+            )
+            .truncate(),
+        );
         if ui.button("Open").clicked() {
             let effects = vec![Effect::OpenDefault(snap.full_path(id))];
             self.apply_effects(effects);
@@ -174,5 +257,92 @@ impl App {
                 });
             }
         }
+    }
+
+    /// The "Custom…" width window: a live editor for `ui.preview_pane.width`.
+    pub(crate) fn preview_width_window(&mut self, ctx: &egui::Context) {
+        if !self.preview.width_window {
+            return;
+        }
+        let mut open = true;
+        let mut width = self.config.ui.preview_pane.width.round();
+        let shown = self.preview.pane_rect.map(|r| r.width().round());
+        egui::Window::new("Preview pane width")
+            .id(egui::Id::new("everythux_preview_width"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Width:");
+                    let drag = egui::DragValue::new(&mut width)
+                        .range(CUSTOM_WIDTH_RANGE)
+                        .speed(10.0)
+                        .fixed_decimals(0)
+                        .suffix(" px");
+                    if ui.add(drag).changed() {
+                        // Steps of 10 px, whether dragged or typed.
+                        width = ((width / 10.0).round() * 10.0)
+                            .clamp(*CUSTOM_WIDTH_RANGE.start(), *CUSTOM_WIDTH_RANGE.end());
+                    }
+                });
+                match shown {
+                    Some(shown) if (shown - width).abs() > 1.0 && self.config.ui.preview_pane.enabled => {
+                        ui.weak(format!(
+                            "The window is too narrow: the pane is shown at {shown} px for now."
+                        ));
+                    }
+                    _ if !self.config.ui.preview_pane.enabled => {
+                        ui.weak(format!(
+                            "The preview pane is hidden ({} shows it).",
+                            describe_shortcut(self.bindings.toggle_preview)
+                        ));
+                    }
+                    _ => {
+                        ui.weak("Changes apply and are saved immediately.");
+                    }
+                }
+            });
+        self.set_preview_width(width);
+        if !open {
+            self.close_popup(PopupId::PreviewWidth);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shown_width_keeps_the_configured_width_while_it_fits() {
+        assert!((shown_width(360.0, 1200.0) - 360.0).abs() < f32::EPSILON);
+        assert!(
+            (shown_width(5000.0, 4000.0) - 1200.0).abs() < f32::EPSILON,
+            "clamped to the maximum"
+        );
+        assert!((shown_width(f32::NAN, 1200.0) - 360.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn shown_width_gives_way_in_narrow_windows() {
+        assert!(
+            (shown_width(360.0, 600.0) - 300.0).abs() < f32::EPSILON,
+            "table keeps 300 px"
+        );
+        assert!(
+            (shown_width(360.0, 400.0) - 160.0).abs() < f32::EPSILON,
+            "never below the minimum"
+        );
+        assert!(
+            (shown_width(360.0, 100.0) - 100.0).abs() < f32::EPSILON,
+            "never wider than the window"
+        );
+    }
+
+    #[test]
+    fn images_scale_down_to_the_width_but_never_up() {
+        assert_eq!(fit_width(Vec2::new(4000.0, 400.0), 400.0), Vec2::new(400.0, 40.0));
+        assert_eq!(fit_width(Vec2::new(100.0, 50.0), 400.0), Vec2::new(100.0, 50.0));
     }
 }

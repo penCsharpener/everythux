@@ -71,13 +71,13 @@ except `crates/app/src/app.rs` state wiring.
   fixed-width case.
 
 ### Tasks
-- [ ] `core`: add `PreviewPaneConfig.resizable` (default `false`), plus docs in `docs/configuration.md`.
-- [ ] `app/ui/preview_pane.rs`: when not resizable, build the panel with
+- [x] `core`: add `PreviewPaneConfig.resizable` (default `false`), plus docs in `docs/configuration.md`.
+- [x] `app/ui/preview_pane.rs`: when not resizable, build the panel with
       `exact_width(clamped width)`; keep the drag path for `resizable = true`.
-- [ ] `app/ui/menus.rs`: View → Preview pane submenu (enable toggle, presets, Custom…,
+- [x] `app/ui/menus.rs`: View → Preview pane submenu (enable toggle, presets, Custom…,
       "Allow resizing by dragging").
-- [ ] Width-capped rendering for every content kind (header truncation, image fit, grid truncation).
-- [ ] Narrow-window clamp that never writes config.
+- [x] Width-capped rendering for every content kind (header truncation, image fit, grid truncation).
+- [x] Narrow-window clamp that never writes config.
 
 ### Tests (kittest, `crates/app/src/ui/tests.rs`)
 - `fixed_width_pane_has_exact_width_for_every_content_kind`: render each `PreviewContent`

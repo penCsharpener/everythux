@@ -165,8 +165,12 @@ impl Default for SortConfig {
 pub struct PreviewPaneConfig {
     /// Whether the pane is shown.
     pub enabled: bool,
-    /// Pane width in logical pixels.
+    /// Pane width in logical pixels. The pane always has exactly this width (unless the window is
+    /// too narrow for it); the previewed item never changes it.
     pub width: f32,
+    /// Whether the pane edge can be dragged to change `width`. Off by default: the width is set
+    /// in View → Preview pane.
+    pub resizable: bool,
     /// Files larger than this aren't previewed (bytes).
     pub max_file_size: u64,
 }
@@ -176,6 +180,7 @@ impl Default for PreviewPaneConfig {
         Self {
             enabled: false,
             width: 360.0,
+            resizable: false,
             max_file_size: 512 * 1024 * 1024,
         }
     }
@@ -441,5 +446,24 @@ pub fn migrate(value: &mut serde_json::Value) {
     // Version 0 (no field) -> 1: nothing to rename yet; just stamp the version.
     if version < u64::from(CURRENT_VERSION) {
         obj.insert("version".to_owned(), CURRENT_VERSION.into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn preview_pane_fields_default_when_missing() {
+        let config = Config::from_json(
+            r#"{ "ui": { "preview_pane": { "width": 400 } } }"#,
+            Path::new("c.json"),
+        )
+        .expect("old config loads");
+        let pane = &config.ui.preview_pane;
+        assert!((pane.width - 400.0).abs() < f32::EPSILON);
+        assert!(!pane.resizable, "fixed width unless asked for");
     }
 }

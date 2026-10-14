@@ -39,7 +39,7 @@ and `enabled`. See [exclusions.md](exclusions.md) for the semantics and the defa
 |-------|---------|---------|
 | `columns` | all five, visible | List of `{ "id", "width", "visible" }` in display order. `id` is `name`, `path`, `type`, `modified` or `size`; `width` is in logical pixels. Defaults: name 280, path 420, type 140, modified 150, size 90 |
 | `sort` | `{ "column": "name", "ascending": true }` | Sort order of the result table |
-| `preview_pane` | `{ "enabled": false, "width": 360, "max_file_size": 536870912 }` | Preview pane. Files larger than `max_file_size` bytes (512 MiB) are not previewed |
+| `preview_pane` | `{ "enabled": false, "width": 360, "resizable": false, "max_file_size": 536870912 }` | Preview pane. `width` is the fixed pane width in logical pixels, set in View → Preview pane (presets or Custom…, 200–1200). The previewed file never changes it; a window too narrow for it shrinks the pane for the moment without changing the setting. `resizable: true` also lets you drag the pane edge, which saves the new width. Files larger than `max_file_size` bytes (512 MiB) are not previewed |
 | `properties_target` | `"parent"` | What a Size or Modified double-click shows properties for: `"parent"` (containing folder) or `"item"` |
 | `rename_on_slow_click` | `false` | Start an inline rename with a slow second click on the selected row's name (F2 and the context menu always work) |
 | `size_format` | `"binary"` | `"binary"` (KiB, MiB), `"si"` (kB, MB) or `"bytes"` (exact) |
