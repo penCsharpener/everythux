@@ -240,16 +240,23 @@ garbage, and copying text from the preview works.
   dm:thisweek`, so it's clear which bars are active.
 
 ### Tasks
-- [ ] `search`: `Query::all`, `parse_many` with per-bar error index; `SearchRequest.texts`; service
+- [x] `search`: `Query::all`, `parse_many` with per-bar error index; `SearchRequest.texts`; service
       and CLI updated; proptest that `parse_many([a, b])` matches the same entries as
       `parse("(a) (b)")` wherever the single-string form is well defined.
-- [ ] `core`: new `Keybindings` fields with defaults; docs in `docs/configuration.md`.
-- [ ] `app/app/search.rs`: the `bars` model with add, close and edit, building `texts` for the
+- [x] `core`: new `Keybindings` fields with defaults; docs in `docs/configuration.md`.
+- [x] `app/app/search.rs`: the `bars` model with add, close and edit, building `texts` for the
       request; a result that comes back with a bar error is attached to that bar.
-- [ ] `app/ui/search_bar.rs`: the bar stack, `+` and `×` buttons, the AND labels and per-bar errors.
-- [ ] `app/app/frame.rs`: global `Tab`/`Shift+Tab`/`Ctrl+T`/`Ctrl+W` handling and focus routing;
+- [x] `app/ui/search_bar.rs`: the bar stack, `+` and `×` buttons, the AND labels and per-bar errors.
+- [x] `app/app/frame.rs`: global `Tab`/`Shift+Tab`/`Ctrl+T`/`Ctrl+W` handling and focus routing;
       the newest-bar tracking.
-- [ ] `docs/search-syntax.md` (multiple bars) and `docs/shortcuts.md`.
+- [x] `docs/search-syntax.md` (multiple bars) and `docs/shortcuts.md`.
+
+As built: `parse_many` returns `Result<Query, BarQueryError { bar, error }>` instead of a tuple, and
+`SearchResults.error` became `Option<SearchError { bar, message }>`. The query language has no
+parentheses, so the proptest compares against the bars joined with a space. `Ctrl+W` is also consumed
+(as a no-op) in the first bar, so the text field doesn't treat it as "delete word". `Esc` clears the
+focused bar. The status bar shows the combined query once there are two or more bars; the window title
+always shows it.
 
 ### Tests
 - `search`: `Query::all` semantics (empty list matches everything, single bar equals plain parse);

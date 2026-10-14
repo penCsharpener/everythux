@@ -156,9 +156,34 @@ impl Query {
         self.options
     }
 
+    /// The AND of `queries`, as if each were one search bar.
+    ///
+    /// Nested ANDs are flattened, so the engine orders the combined clauses by cost exactly as it
+    /// would for a single query holding the same terms. An empty list matches everything. The
+    /// result carries the options of the first query (the switches are global, only a bare
+    /// `case:` can differ per bar, and it is already compiled into that bar's terms).
+    pub fn all(queries: Vec<Query>) -> Self {
+        let options = queries.first().map(Query::options).unwrap_or_default();
+        Self {
+            expr: Expr::and(queries.into_iter().map(|q| q.expr).collect()),
+            options,
+        }
+    }
+
     pub(crate) fn expr(&self) -> &Expr {
         &self.expr
     }
+}
+
+/// A parse error in one of several search bars (see [`parse_many`]).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("search bar {}: {error}", bar + 1)]
+pub struct BarQueryError {
+    /// Index of the failing text in the slice passed to [`parse_many`] (0 = first bar).
+    pub bar: usize,
+    /// What is wrong with it.
+    #[source]
+    pub error: QueryError,
 }
 
 /// A query that can't be parsed (shown under the search box; the previous results stay).
@@ -209,6 +234,46 @@ pub fn parse_at<Tz: TimeZone>(
         midnight_ns: &midnight_ns,
     };
     Parser { options, cal: &cal }.parse(input)
+}
+
+/// Parses each text on its own and combines the results with AND ([`Query::all`]).
+///
+/// This is what several search bars mean: an unterminated quote or a trailing `|` in one text can't
+/// leak into another, unlike concatenating them. Empty texts match everything and so change
+/// nothing.
+///
+/// # Errors
+///
+/// The first text that fails to parse, with its index.
+pub fn parse_many<S: AsRef<str>>(texts: &[S], options: QueryOptions) -> Result<Query, BarQueryError> {
+    parse_many_at(texts, options, &Local::now())
+}
+
+/// Like [`parse_many`], with an explicit "now" for `dm:` filters.
+///
+/// # Errors
+///
+/// The first text that fails to parse, with its index.
+pub fn parse_many_at<S: AsRef<str>, Tz: TimeZone>(
+    texts: &[S],
+    options: QueryOptions,
+    now: &DateTime<Tz>,
+) -> Result<Query, BarQueryError> {
+    let queries = texts
+        .iter()
+        .enumerate()
+        .map(|(bar, text)| {
+            parse_at(text.as_ref(), options, now).map_err(|error| BarQueryError { bar, error })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if queries.is_empty() {
+        // Keep the switches even though no text was given.
+        return Ok(Query {
+            expr: Expr::True,
+            options,
+        });
+    }
+    Ok(Query::all(queries))
 }
 
 struct Parser<'a> {
@@ -479,6 +544,70 @@ mod tests {
             ..QueryOptions::default()
         };
         assert!(matches!(parse("(", opts), Err(QueryError::Regex(_))));
+    }
+
+    fn many(texts: &[&str]) -> Result<Query, BarQueryError> {
+        let now = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 3, 18, 12, 0, 0)
+            .unwrap();
+        parse_many_at(texts, QueryOptions::default(), &now)
+    }
+
+    #[test]
+    fn all_of_nothing_matches_everything() {
+        assert!(Query::all(Vec::new()).is_match_all());
+        assert!(many(&[]).unwrap().is_match_all());
+        assert!(many(&["", "  ", "*"]).unwrap().is_match_all());
+    }
+
+    #[test]
+    fn a_single_bar_equals_a_plain_parse() {
+        for text in ["a", "a b|c", "!x ext:pdf", "dm:today size:>1kb", ""] {
+            assert_eq!(show(many(&[text]).unwrap().expr()), ast(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn bars_are_flattened_into_one_and() {
+        assert_eq!(show(many(&["a", "b"]).unwrap().expr()), "and(sub:a,sub:b)");
+        assert_eq!(
+            show(many(&["a b|c", "", "ext:pdf"]).unwrap().expr()),
+            "and(sub:a,or(sub:b,sub:c),ext:pdf)"
+        );
+        assert_eq!(show(many(&["a", "size:<0"]).unwrap().expr()), "F");
+    }
+
+    #[test]
+    fn bars_do_not_leak_into_each_other() {
+        // Concatenated, `a|` would join `b` into an OR; as bars it is a lone `a`.
+        assert_eq!(show(many(&["a|", "b"]).unwrap().expr()), "and(sub:a,sub:b)");
+        // A bare `case:` only affects its own bar.
+        assert_eq!(
+            show(many(&["case: Foo", "Bar"]).unwrap().expr()),
+            "and(sub:Foo,sub:bar)"
+        );
+    }
+
+    #[test]
+    fn the_failing_bar_is_reported() {
+        let err = many(&["ok", "\"open", "size:>abc"]).unwrap_err();
+        assert_eq!(err.bar, 1);
+        assert_eq!(err.error, QueryError::UnterminatedQuote);
+        assert_eq!(err.to_string(), "search bar 2: unterminated quote");
+        assert_eq!(many(&["", "x", "regex:("]).unwrap_err().bar, 2);
+    }
+
+    #[test]
+    fn regex_mode_compiles_each_bar_on_its_own() {
+        let opts = QueryOptions {
+            regex: true,
+            ..QueryOptions::default()
+        };
+        let q = parse_many(&["^a", "b$"], opts).unwrap();
+        assert_eq!(show(q.expr()), "and(re,re)");
+        assert!(q.options().regex);
+        assert_eq!(parse_many(&["a", "("], opts).unwrap_err().bar, 1);
     }
 
     #[test]

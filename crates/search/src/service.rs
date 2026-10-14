@@ -16,13 +16,14 @@ use everythux_core::ids::EntryId;
 use everythux_core::snapshot::IndexSnapshot;
 
 use crate::engine::{SearchIndex, Sort};
-use crate::query::{QueryOptions, parse};
+use crate::query::{QueryOptions, parse_many};
 
 /// What to search for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchRequest {
-    /// Search box text.
-    pub text: String,
+    /// The text of each search bar. Each is parsed on its own and the results are combined with
+    /// AND ([`crate::parse_many`]); empty texts change nothing, and no texts match everything.
+    pub texts: Vec<String>,
     /// Switches.
     pub options: QueryOptions,
     /// Ordering.
@@ -46,7 +47,16 @@ pub struct SearchResults {
     /// Time spent searching.
     pub elapsed: Duration,
     /// Parse error; when set, `ids` holds the previous results unchanged.
-    pub error: Option<String>,
+    pub error: Option<SearchError>,
+}
+
+/// Why a request could not run: a search bar whose text doesn't parse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchError {
+    /// Index of the failing bar in [`SearchRequest::texts`].
+    pub bar: usize,
+    /// The message to show under that bar.
+    pub message: String,
 }
 
 enum Msg {
@@ -240,7 +250,7 @@ impl Worker {
             return;
         };
         let started = Instant::now();
-        let outcome = parse(&request.text, request.options).map(|query| {
+        let outcome = parse_many(&request.texts, request.options).map(|query| {
             let cancelled = || {
                 self.shared.generation.load(Ordering::Relaxed) != generation
                     || self.shared.closed.load(Ordering::Relaxed)
@@ -269,7 +279,10 @@ impl Worker {
                 total_entries: self.last_snapshot.len(),
                 snapshot: Arc::clone(&self.last_snapshot),
                 elapsed: started.elapsed(),
-                error: Some(error.to_string()),
+                error: Some(SearchError {
+                    bar: error.bar,
+                    message: error.error.to_string(),
+                }),
             },
         };
         // The receiver may be gone (UI shutting down); the next recv will notice the stop message.
@@ -283,7 +296,7 @@ mod tests {
 
     fn request(text: &str) -> SearchRequest {
         SearchRequest {
-            text: text.to_owned(),
+            texts: vec![text.to_owned()],
             options: QueryOptions::default(),
             sort: Sort::default(),
             limit: 0,
@@ -304,7 +317,7 @@ mod tests {
             batch.push(search_msg(g, text));
         }
         let (generation, req) = batch.search.expect("a search is queued");
-        assert_eq!((generation, req.text.as_str()), (3, "c"));
+        assert_eq!((generation, req.texts), (3, vec!["c".to_owned()]));
         assert!(!batch.stop);
     }
 

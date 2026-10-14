@@ -7,6 +7,8 @@ Written in Rust, focused on ext4, backed by SQLite.
   keeps the index fresh with quick rescans and inotify.
 - Results update as you type: an in-memory engine answers substring queries over 2 million entries in
   about 10 ms, with Everything-style syntax (`foo bar|baz !qux ext:pdf;docx size:>10mb dm:thisweek`).
+- Narrow a search step by step: `+` (or `Ctrl+T`) adds another search bar, and all bars combine with AND.
+  `Tab` switches between the result list and the newest bar.
 - Five columns: Name, Path, Type, Date Modified, Size (folders show their recursive size).
 - Double-click a **Path** cell to open the folder with the file selected. Double-click **Size** or
   **Date Modified** to open the folder's properties. Double-click **Name** to open the file.

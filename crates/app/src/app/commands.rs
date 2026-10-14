@@ -5,6 +5,7 @@ use everythux_index::{Job, ScanMode};
 
 use super::interact::{CopyKind, Nav};
 use super::{App, PopupId};
+use crate::search_bars::FIRST_BAR;
 use crate::status::ToastKind;
 
 /// Something the user asked for, independent of how (menu, shortcut, button).
@@ -33,8 +34,14 @@ pub(crate) enum Command {
     OpenExclusions,
     ShowShortcuts,
     ShowAbout,
-    /// `Escape`: close the topmost popup, else clear the search box.
+    /// `Escape`: close the topmost popup, else clear the focused search bar (or the first).
     Escape,
+    /// `Ctrl+T`: add a search bar.
+    AddSearchBar,
+    /// `Ctrl+W`: close the focused extra search bar.
+    CloseSearchBar,
+    /// `Tab` / `Shift+Tab`: move the focus between the result list and the newest search bar.
+    SwitchFocus,
     /// `Enter`.
     Open,
     /// `Ctrl+Enter`.
@@ -77,7 +84,7 @@ impl App {
                 self.open_popup(PopupId::PreviewWidth);
             }
             Command::TogglePreviewResizable => self.toggle_preview_resizable(),
-            Command::FocusSearch => self.search.focus_requested = true,
+            Command::FocusSearch => self.search.focus_bar = Some(FIRST_BAR),
             Command::ToggleMatchPath => self.toggle_match_path(),
             Command::ToggleCaseSensitive => self.toggle_case_sensitive(),
             Command::ToggleRegex => self.toggle_regex(),
@@ -96,10 +103,20 @@ impl App {
                 self.open_popup(PopupId::About);
             }
             Command::Escape => {
-                if !self.close_topmost_popup() && !self.search.text.is_empty() {
-                    self.set_search_text("");
+                if !self.close_topmost_popup() {
+                    let bar = self.focused_bar(true).unwrap_or(FIRST_BAR);
+                    if self.search.bar_mut(bar).is_some_and(|b| !b.text.is_empty()) {
+                        self.set_bar_text(bar, "");
+                    }
                 }
             }
+            Command::AddSearchBar => self.add_search_bar(),
+            Command::CloseSearchBar => {
+                if let Some(bar) = self.focused_bar(false) {
+                    self.close_search_bar(bar);
+                }
+            }
+            Command::SwitchFocus => self.switch_focus(),
             Command::Open => {
                 let effects = self.open_selection();
                 self.apply_effects(effects);
@@ -181,9 +198,9 @@ mod tests {
         t.app.run_command(Command::FullReindex);
         t.app.run_command(Command::Escape);
         assert!(!t.app.windows.confirm_reindex);
-        assert_eq!(t.app.search.text, "abc");
+        assert_eq!(t.app.search.first().text, "abc");
         t.app.run_command(Command::Escape);
-        assert_eq!(t.app.search.text, "", "second Escape clears the search");
+        assert_eq!(t.app.search.first().text, "", "second Escape clears the search");
     }
 
     #[test]
@@ -196,9 +213,9 @@ mod tests {
     #[test]
     fn focus_and_toggles() {
         let mut t = TestApp::new();
-        t.app.search.focus_requested = false;
+        t.app.search.focus_bar = None;
         t.app.run_command(Command::FocusSearch);
-        assert!(t.app.search.focus_requested);
+        assert_eq!(t.app.search.focus_bar, Some(FIRST_BAR));
         t.app.run_command(Command::TogglePreview);
         assert!(t.app.config.ui.preview_pane.enabled);
         t.app.run_command(Command::TogglePreview);

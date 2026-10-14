@@ -20,6 +20,7 @@ mod preview;
 mod properties;
 mod rename;
 mod runtime;
+mod search_bars;
 mod selection;
 mod status;
 mod tasks;

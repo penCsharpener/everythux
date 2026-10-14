@@ -77,8 +77,8 @@ fn typing_in_the_search_box_submits_a_search() {
         .get_by_role(egui::accesskit::Role::TextInput)
         .type_text("report");
     r.harness.run_steps(3);
-    assert_eq!(r.harness.state().search.text, "report");
-    assert_eq!(r.fake.searches().last().expect("a search").text, "report");
+    assert_eq!(r.harness.state().search.first().text, "report");
+    assert_eq!(r.fake.searches().last().expect("a search").texts, ["report"]);
 }
 
 #[test]
@@ -95,7 +95,11 @@ fn ctrl_shift_r_reindexes_even_while_the_search_box_has_focus() {
         .key_press_modifiers(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
     r.harness.run_steps(3);
     assert_eq!(r.fake.jobs(), [Job::FullReindex]);
-    assert_eq!(r.harness.state().search.text, "abc", "the box kept its text");
+    assert_eq!(
+        r.harness.state().search.first().text,
+        "abc",
+        "the box kept its text"
+    );
 }
 
 #[test]
@@ -313,7 +317,7 @@ fn escape_clears_the_search_text() {
     r.harness.run_steps(2);
     r.harness.key_press(Key::Escape);
     r.harness.run_steps(3);
-    assert_eq!(r.harness.state().search.text, "");
+    assert_eq!(r.harness.state().search.first().text, "");
 }
 
 #[test]
@@ -1228,7 +1232,7 @@ mod rename {
     #[test]
     fn esc_cancels_without_side_effects() {
         let mut r = editing();
-        r.harness.state_mut().search.text = "abc".to_owned();
+        r.harness.state_mut().search.first_mut().text = "abc".to_owned();
         type_text(&mut r, "todo");
         press(&mut r, Key::Escape);
         assert!(r.harness.state().rename.is_none());
@@ -1239,7 +1243,7 @@ mod rename {
         );
         assert_eq!(r.fake.jobs().len(), 0, "{:?}", r.fake.jobs());
         assert_eq!(
-            r.harness.state().search.text,
+            r.harness.state().search.first().text,
             "abc",
             "Escape did not reach the search box"
         );
@@ -1438,7 +1442,7 @@ mod rename {
     #[test]
     fn typing_in_the_editor_does_not_trigger_global_shortcuts() {
         let mut r = editing();
-        r.harness.state_mut().search.text = "abc".to_owned();
+        r.harness.state_mut().search.first_mut().text = "abc".to_owned();
         let cursor_before = r.harness.state().selection.cursor();
         // F5 (quick rescan), Ctrl+P (preview), Ctrl+C / copy, arrows, Home/End, plain typing.
         press(&mut r, Key::F5);
@@ -1458,7 +1462,11 @@ mod rename {
             cursor_before,
             "arrows stayed in the editor"
         );
-        assert_eq!(app.search.text, "abc", "typing did not go to the search box");
+        assert_eq!(
+            app.search.first().text,
+            "abc",
+            "typing did not go to the search box"
+        );
         assert_eq!(
             buffer(&r).as_deref(),
             Some("znotes.txt"),
@@ -1630,7 +1638,11 @@ mod rename {
         assert_eq!(buffer(&r).as_deref(), Some("notes.txt"), "F2 opened the editor");
         assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())));
         type_text(&mut r, "todo");
-        assert_eq!(r.harness.state().search.text, "txt", "the search box got no text");
+        assert_eq!(
+            r.harness.state().search.first().text,
+            "txt",
+            "the search box got no text"
+        );
         assert_eq!(buffer(&r).as_deref(), Some("todo.txt"));
         press(&mut r, Key::Enter);
         assert_eq!(
@@ -1671,5 +1683,401 @@ mod rename {
         press(&mut r, Key::F2);
         assert!(r.harness.state().rename.is_some(), "reopened");
         assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())));
+    }
+}
+
+mod search_bars {
+    use egui_kittest::kittest::NodeT as _;
+    use everythux_search::{QueryOptions, SearchError, SearchIndex, Sort, parse_many};
+
+    use super::*;
+    use crate::app::bar_widget_id;
+    use crate::search_bars::{FIRST_BAR, MAX_SEARCH_BARS};
+    use crate::ui::rename_editor::editor_id;
+
+    const ADD: &str = "Add a search bar";
+    const CLOSE: &str = "Close this search bar";
+
+    fn ids(r: &Rig) -> Vec<u32> {
+        r.harness.state().search.bars.iter().map(|b| b.id).collect()
+    }
+
+    fn texts(r: &Rig) -> Vec<String> {
+        r.harness.state().search.texts()
+    }
+
+    fn focused_bar(r: &Rig) -> Option<u32> {
+        let ctx = &r.harness.ctx;
+        ids(r)
+            .into_iter()
+            .find(|&id| ctx.memory(|m| m.has_focus(bar_widget_id(id))))
+    }
+
+    fn nothing_focused(r: &Rig) -> bool {
+        r.harness.ctx.memory(|m| m.focused().is_none())
+    }
+
+    fn focus_bar(r: &mut Rig, id: u32) {
+        r.harness.ctx.memory_mut(|m| m.request_focus(bar_widget_id(id)));
+        r.harness.run_steps(2);
+        assert_eq!(focused_bar(r), Some(id));
+    }
+
+    fn type_text(r: &mut Rig, text: &str) {
+        r.harness.event(egui::Event::Text(text.to_owned()));
+        r.harness.run_steps(2);
+    }
+
+    fn press(r: &mut Rig, modifiers: Modifiers, key: Key) {
+        r.harness.key_press_modifiers(modifiers, key);
+        r.harness.run_steps(3);
+    }
+
+    fn click_plus(r: &mut Rig) {
+        r.harness.get_by_label(ADD).click();
+        r.harness.run_steps(3);
+    }
+
+    /// The app with `n` bars, via the `+` button.
+    fn with_bars(n: usize) -> Rig {
+        let mut r = rig();
+        r.harness.run_steps(3);
+        for _ in 1..n {
+            click_plus(&mut r);
+        }
+        assert_eq!(ids(&r).len(), n);
+        r
+    }
+
+    fn bar_rect(r: &Rig, id: u32) -> egui::Rect {
+        r.harness
+            .ctx
+            .read_response(bar_widget_id(id))
+            .expect("the bar is drawn")
+            .rect
+    }
+
+    #[test]
+    fn plus_adds_a_bar_below_and_focuses_it() {
+        let mut r = with_bars(1);
+        assert_eq!(
+            focused_bar(&r),
+            Some(FIRST_BAR),
+            "the first bar is focused on startup"
+        );
+        r.fake.clear();
+        click_plus(&mut r);
+        assert_eq!(ids(&r), [0, 1]);
+        assert_eq!(focused_bar(&r), Some(1), "the new bar has the focus");
+        let (first, second) = (bar_rect(&r, 0), bar_rect(&r, 1));
+        assert!(second.top() >= first.bottom(), "{first:?} then {second:?}");
+        assert!((second.right() - first.right()).abs() < 0.5, "same right edge");
+        assert_eq!(
+            r.fake.searches().last().expect("re-run").texts,
+            ["", ""],
+            "the search re-runs with the empty bar"
+        );
+        type_text(&mut r, "pdf");
+        assert_eq!(texts(&r), ["", "pdf"], "typing goes to the new bar");
+    }
+
+    #[test]
+    fn closing_a_middle_bar_keeps_the_others_and_their_focus_ids() {
+        let mut r = with_bars(3);
+        for (id, text) in [(0, "a"), (1, "b"), (2, "c")] {
+            focus_bar(&mut r, id);
+            type_text(&mut r, text);
+        }
+        let closes: Vec<_> = r.harness.get_all_by_label(CLOSE).collect();
+        assert_eq!(closes.len(), 2);
+        closes[0].click(); // the middle bar's ×
+        r.harness.run_steps(3);
+        assert_eq!(ids(&r), [0, 2]);
+        assert_eq!(texts(&r), ["a", "c"]);
+        assert_eq!(focused_bar(&r), Some(FIRST_BAR), "the bar above takes the focus");
+        assert_eq!(r.fake.searches().last().expect("re-run").texts, ["a", "c"]);
+        // The bottom bar kept its widget id, so focus requests and typing still reach it.
+        assert!(r.harness.ctx.read_response(bar_widget_id(2)).is_some());
+        focus_bar(&mut r, 2);
+        type_text(&mut r, "d");
+        assert_eq!(texts(&r), ["a", "cd"]);
+    }
+
+    #[test]
+    fn first_bar_has_no_close_button() {
+        let mut r = with_bars(1);
+        assert!(r.harness.query_by_label(CLOSE).is_none());
+        assert!(r.harness.query_by_label(ADD).is_some());
+        click_plus(&mut r);
+        assert_eq!(
+            r.harness.get_all_by_label(CLOSE).count(),
+            1,
+            "only the extra bar has one"
+        );
+        assert_eq!(
+            r.harness.get_all_by_label(ADD).count(),
+            1,
+            "only the first bar has +"
+        );
+    }
+
+    #[test]
+    fn bars_combine_with_and() {
+        let mut r = with_bars(2);
+        focus_bar(&mut r, 0);
+        type_text(&mut r, "r");
+        focus_bar(&mut r, 1);
+        type_text(&mut r, "t");
+        let request = r.fake.searches().last().expect("a search").clone();
+        assert_eq!(request.texts, ["r", "t"]);
+
+        // Answer like the real service would.
+        let index = SearchIndex::build(std::sync::Arc::clone(&r.fixture.snapshot));
+        let query = parse_many(&request.texts, QueryOptions::default()).expect("parses");
+        let hits = index
+            .search(&query, Sort::default(), 0, &|| false)
+            .expect("not cancelled");
+        r.show(&hits);
+        let snap = std::sync::Arc::clone(&r.fixture.snapshot);
+        let names: Vec<String> = hits
+            .iter()
+            .map(|&id| String::from_utf8_lossy(snap.name(id)).into_owned())
+            .collect();
+        assert!(
+            names.iter().all(|n| n.contains('r') && n.contains('t')),
+            "{names:?}"
+        );
+        assert!(names.contains(&"report.pdf".to_owned()), "{names:?}");
+        assert!(
+            !names.contains(&"notes.txt".to_owned()),
+            "no r in notes.txt: {names:?}"
+        );
+        assert_eq!(
+            r.harness.state().results.as_ref().expect("results").len(),
+            hits.len()
+        );
+        assert!(r.harness.query_by_label("report.pdf").is_some());
+        assert!(r.harness.query_by_label("notes.txt").is_none());
+    }
+
+    #[test]
+    fn parse_error_is_shown_under_the_failing_bar_only() {
+        let mut r = with_bars(3);
+        r.show_default();
+        let generation = r.harness.state().search.latest_generation;
+        let ids_before = r.harness.state().results.as_ref().expect("results").ids.clone();
+        r.fake.send_results_with(
+            generation,
+            &r.fixture.snapshot,
+            &ids_before,
+            Some(SearchError {
+                bar: 1,
+                message: "unterminated quote".to_owned(),
+            }),
+        );
+        r.harness.run_steps(3);
+        let errors: Vec<bool> = r
+            .harness
+            .state()
+            .search
+            .bars
+            .iter()
+            .map(|b| b.error.is_some())
+            .collect();
+        assert_eq!(errors, [false, true, false]);
+        let rect = r.harness.get_by_label("unterminated quote").rect();
+        let (middle, bottom) = (bar_rect(&r, 1), bar_rect(&r, 2));
+        assert!(
+            middle.bottom() <= rect.top() && rect.bottom() <= bottom.top(),
+            "the message sits between the failing bar and the next: {rect:?}"
+        );
+        assert_eq!(
+            r.harness.state().results.as_ref().expect("results").len(),
+            3,
+            "results stay"
+        );
+    }
+
+    #[test]
+    fn tab_toggles_between_table_and_newest_bar() {
+        let mut r = with_bars(3);
+        r.show_default();
+        r.click_cell("notes.txt", Modifiers::NONE);
+        assert!(
+            nothing_focused(&r),
+            "clicking the list leaves no text field focused"
+        );
+        assert_eq!(r.harness.state().selection.cursor(), Some(1));
+
+        press(&mut r, Modifiers::NONE, Key::Tab);
+        assert_eq!(focused_bar(&r), Some(2), "the newest bar");
+        press(&mut r, Modifiers::NONE, Key::Tab);
+        assert!(nothing_focused(&r), "back to the list");
+        assert_eq!(r.harness.state().selection.cursor(), Some(1), "selection kept");
+
+        focus_bar(&mut r, 1);
+        press(&mut r, Modifiers::NONE, Key::Tab);
+        assert!(nothing_focused(&r), "from bar 1 to the list");
+        assert_eq!(r.harness.state().selection.cursor(), Some(1));
+
+        press(&mut r, Modifiers::SHIFT, Key::Tab);
+        assert_eq!(focused_bar(&r), Some(2), "Shift+Tab toggles too");
+        press(&mut r, Modifiers::SHIFT, Key::Tab);
+        assert!(nothing_focused(&r));
+
+        // Keys typed after Tab reach the list again.
+        press(&mut r, Modifiers::NONE, Key::ArrowDown);
+        assert_eq!(r.harness.state().selection.cursor(), Some(2));
+    }
+
+    #[test]
+    fn tab_from_a_bar_without_a_selection_selects_the_first_row() {
+        let mut r = with_bars(1);
+        r.show_default();
+        assert!(r.harness.state().selection.is_empty());
+        assert_eq!(focused_bar(&r), Some(FIRST_BAR));
+        press(&mut r, Modifiers::NONE, Key::Tab);
+        assert!(nothing_focused(&r));
+        assert_eq!(r.harness.state().selection.cursor(), Some(0));
+        press(&mut r, Modifiers::NONE, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [PlatformAction::OpenDefault("/home/me/docs/report.pdf".into())]
+        );
+    }
+
+    #[test]
+    fn tab_does_not_cycle_through_table_cells() {
+        let mut r = with_bars(2);
+        r.show_default();
+        r.click_cell("report.pdf", Modifiers::NONE);
+        for i in 0..6 {
+            press(&mut r, Modifiers::NONE, Key::Tab);
+            let focused = r.harness.ctx.memory(egui::Memory::focused);
+            let expected = (i % 2 == 0).then(|| bar_widget_id(1));
+            assert_eq!(focused, expected, "Tab #{i} only toggles list and newest bar");
+        }
+        for i in 0..4 {
+            press(&mut r, Modifiers::SHIFT, Key::Tab);
+            let focused = r.harness.ctx.memory(egui::Memory::focused);
+            assert!(
+                focused.is_none() || focused == Some(bar_widget_id(1)),
+                "Shift+Tab #{i} focused {focused:?}"
+            );
+        }
+        assert_eq!(r.harness.state().selection.cursor(), Some(0));
+    }
+
+    #[test]
+    fn ctrl_t_and_ctrl_w_add_and_close_bars() {
+        let mut r = with_bars(1);
+        type_text(&mut r, "a");
+        press(&mut r, Modifiers::CTRL, Key::T);
+        assert_eq!(ids(&r), [0, 1]);
+        assert_eq!(focused_bar(&r), Some(1));
+        type_text(&mut r, "b");
+        press(&mut r, Modifiers::CTRL, Key::T);
+        type_text(&mut r, "c");
+        assert_eq!(texts(&r), ["a", "b", "c"]);
+
+        press(&mut r, Modifiers::CTRL, Key::W);
+        assert_eq!(ids(&r), [0, 1]);
+        assert_eq!(focused_bar(&r), Some(1), "the bar above");
+        press(&mut r, Modifiers::CTRL, Key::W);
+        assert_eq!(ids(&r), [0]);
+        assert_eq!(focused_bar(&r), Some(FIRST_BAR));
+        press(&mut r, Modifiers::CTRL, Key::W);
+        assert_eq!(texts(&r), ["a"], "Ctrl+W never closes the first bar");
+        assert_eq!(r.fake.searches().last().expect("a search").texts, ["a"]);
+
+        // Ctrl+T also works from the list.
+        r.show_default();
+        r.click_cell("notes.txt", Modifiers::NONE);
+        press(&mut r, Modifiers::CTRL, Key::T);
+        assert_eq!(ids(&r), [0, 3]);
+        assert_eq!(focused_bar(&r), Some(3));
+    }
+
+    #[test]
+    fn eight_bar_limit_disables_plus() {
+        let mut r = with_bars(1);
+        for _ in 0..MAX_SEARCH_BARS + 2 {
+            press(&mut r, Modifiers::CTRL, Key::T);
+        }
+        assert_eq!(ids(&r).len(), MAX_SEARCH_BARS, "Ctrl+T stops at the limit");
+        let plus = r.harness.get_by_label(ADD);
+        assert!(plus.accesskit_node().is_disabled(), "+ is disabled");
+        plus.click();
+        r.harness.run_steps(3);
+        assert_eq!(
+            ids(&r).len(),
+            MAX_SEARCH_BARS,
+            "clicking a disabled + does nothing"
+        );
+        // Closing one enables it again. (The disabled button let the click through to the
+        // first bar's field, so focus the newest bar first.)
+        let newest = r.harness.state().search.newest();
+        focus_bar(&mut r, newest);
+        press(&mut r, Modifiers::CTRL, Key::W);
+        assert!(!r.harness.get_by_label(ADD).accesskit_node().is_disabled());
+    }
+
+    #[test]
+    fn tab_while_renaming_commits_the_rename_and_keeps_the_bars() {
+        let mut r = with_bars(2);
+        r.show_default();
+        r.click_cell("notes.txt", Modifiers::NONE);
+        press(&mut r, Modifiers::NONE, Key::F2);
+        assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())), "editing");
+        // Bar shortcuts are suspended while the editor is open.
+        press(&mut r, Modifiers::CTRL, Key::T);
+        assert_eq!(ids(&r), [0, 1], "Ctrl+T did not add a bar");
+        type_text(&mut r, "todo");
+        press(&mut r, Modifiers::NONE, Key::Tab);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [PlatformAction::Rename {
+                from: "/home/me/docs/notes.txt".into(),
+                new_name: "todo.txt".into(),
+                undo: false,
+            }],
+            "Tab committed the rename"
+        );
+        assert!(r.harness.state().rename.is_none());
+        assert_eq!(focused_bar(&r), None, "Tab did not also jump to a bar");
+        assert_eq!(texts(&r), ["", ""], "no text leaked into the bars");
+        // The next Tab is a focus switch again.
+        press(&mut r, Modifiers::NONE, Key::Tab);
+        assert_eq!(focused_bar(&r), Some(1));
+    }
+
+    #[test]
+    fn status_bar_and_title_show_the_combined_query() {
+        let mut r = with_bars(1);
+        type_text(&mut r, "rust");
+        assert_eq!(
+            r.harness.state().search.shown_title.as_deref(),
+            Some("rust - Everythux")
+        );
+        press(&mut r, Modifiers::CTRL, Key::T);
+        type_text(&mut r, "path:src");
+        r.show_default();
+        assert!(r.harness.query_by_label("rust AND path:src").is_some());
+        assert_eq!(
+            r.harness.state().search.shown_title.as_deref(),
+            Some("rust AND path:src - Everythux")
+        );
+    }
+
+    #[test]
+    fn escape_clears_the_focused_bar() {
+        let mut r = with_bars(2);
+        focus_bar(&mut r, 0);
+        type_text(&mut r, "a");
+        focus_bar(&mut r, 1);
+        type_text(&mut r, "b");
+        press(&mut r, Modifiers::NONE, Key::Escape);
+        assert_eq!(texts(&r), ["a", ""], "only the focused bar is cleared");
+        assert_eq!(ids(&r), [0, 1], "Escape doesn't close bars");
     }
 }

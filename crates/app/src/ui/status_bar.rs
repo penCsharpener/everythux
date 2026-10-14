@@ -31,6 +31,14 @@ impl App {
                 ui.separator();
                 ui.weak(format_duration(r.elapsed));
             }
+            // With several bars, spell out what is being searched for.
+            if self.search.bars.len() > 1 {
+                let query = self.search.combined_query();
+                if !query.is_empty() {
+                    ui.separator();
+                    ui.weak(query);
+                }
+            }
             let index_text = self.index.text(self.index_is_empty());
             if !index_text.is_empty() {
                 ui.separator();

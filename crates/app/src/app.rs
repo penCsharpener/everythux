@@ -23,6 +23,8 @@ use everythux_core::model::VolumeInfo;
 use everythux_core::snapshot::IndexSnapshot;
 
 pub(crate) use commands::Command;
+pub(crate) use frame::bar_widget_id;
+#[cfg(test)]
 pub(crate) use frame::search_id;
 pub(crate) use interact::{CellEvent, ContextAction, CopyKind, Effect};
 pub(crate) use rename::CommitTrigger;
@@ -35,6 +37,7 @@ use crate::model::ResultsView;
 use crate::preview::PreviewState;
 use crate::properties::PropertiesWindow;
 use crate::rename::RenameEdit;
+use crate::search_bars::SearchState;
 use crate::selection::Selection;
 use crate::status::{IndexStatus, Toast};
 use crate::ui::table::RowCache;
@@ -42,22 +45,6 @@ use crate::volumes::VolumesWindow;
 
 /// Row height of the result table in logical pixels.
 pub(crate) const ROW_HEIGHT: f32 = 20.0;
-
-/// Search box state.
-#[derive(Debug, Default)]
-pub(crate) struct SearchState {
-    /// Current text of the search box.
-    pub(crate) text: String,
-    /// Generation of the most recently submitted request; older results are ignored.
-    pub(crate) latest_generation: u64,
-    /// Generation of the request the current results answer. Results with the same generation
-    /// are the same query re-run against a newer snapshot.
-    pub(crate) results_generation: u64,
-    /// Parse error of the last query, shown under the box.
-    pub(crate) error: Option<String>,
-    /// Focus the box on the next frame.
-    pub(crate) focus_requested: bool,
-}
 
 /// Identifies a window or popup for the Escape-key stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,10 +154,7 @@ impl App {
             config,
             bindings,
             banners,
-            search: SearchState {
-                focus_requested: true,
-                ..SearchState::default()
-            },
+            search: SearchState::default(),
             results: None,
             selection: Selection::default(),
             scroll_to_row: None,

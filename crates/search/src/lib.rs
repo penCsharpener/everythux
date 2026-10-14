@@ -20,5 +20,5 @@ pub mod service;
 pub mod synthetic;
 
 pub use engine::{SearchIndex, Sort};
-pub use query::{Query, QueryError, QueryOptions, parse, parse_at};
-pub use service::{SearchRequest, SearchResults, SearchService};
+pub use query::{BarQueryError, Query, QueryError, QueryOptions, parse, parse_at, parse_many, parse_many_at};
+pub use service::{SearchError, SearchRequest, SearchResults, SearchService};

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use everythux_core::config::ColumnId;
 use everythux_core::ids::{DirId, EntryId};
 use everythux_search::synthetic::SnapshotBuilder;
-use everythux_search::{QueryOptions, SearchIndex, Sort, parse};
+use everythux_search::{QueryOptions, SearchIndex, Sort, parse, parse_many};
 use proptest::prelude::*;
 
 fn options(case_sensitive: bool, match_path: bool, regex: bool) -> QueryOptions {
@@ -126,6 +126,41 @@ proptest! {
             .filter(|&i| q.matches(&names[i], case_sensitive))
             .collect();
         prop_assert_eq!(got, expected, "query {:?}", text);
+    }
+
+    /// Several bars mean the AND of the bars. The query language has no parentheses, so the
+    /// single-string reference is the texts joined by a space (`"a b"`), which is well defined
+    /// here: each rendered simple query is complete (no dangling `|`, quote or bare `case:`), so
+    /// the join ANDs them. The naive reference checks the same thing without the parser.
+    #[test]
+    fn several_bars_match_the_joined_single_string(
+        names in prop::collection::vec("[a-cA-C._ -]{1,8}", 1..80),
+        bars in prop::collection::vec(prop::option::of(simple_query()), 1..4),
+        case_sensitive in any::<bool>(),
+    ) {
+        let index = snapshot_of(&names);
+        let opts = options(case_sensitive, false, false);
+        let texts: Vec<String> = bars
+            .iter()
+            .map(|q| q.as_ref().map_or_else(String::new, SimpleQuery::render))
+            .collect();
+        let run = |query| {
+            let mut ids: Vec<usize> = index
+                .search(&query, Sort::default(), 0, &|| false)
+                .unwrap()
+                .iter()
+                .map(|id| id.index())
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        let got = run(parse_many(&texts, opts).unwrap());
+        let single = run(parse(&texts.join(" "), opts).unwrap());
+        prop_assert_eq!(&got, &single, "bars {:?}", texts);
+        let expected: Vec<usize> = (0..names.len())
+            .filter(|&i| bars.iter().flatten().all(|q| q.matches(&names[i], case_sensitive)))
+            .collect();
+        prop_assert_eq!(got, expected, "bars {:?}", texts);
     }
 
     #[test]

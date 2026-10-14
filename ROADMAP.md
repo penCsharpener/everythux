@@ -13,6 +13,7 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
 - Phase D (inline rename).
 - Phase A (fixed preview pane width): presets and a Custom… width in View → Preview pane, dragging
   only when `ui.preview_pane.resizable` is on, and every preview kind laid out inside the width.
+- Phase C (several search bars combined with AND, `SearchRequest.texts`).
 
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:

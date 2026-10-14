@@ -1,13 +1,23 @@
 //! One UI frame: input handling before any widget exists, then panels, then windows.
 
-use egui::{Key, Modifiers};
+use egui::{Key, KeyboardShortcut, Modifiers};
 
 use super::interact::{CopyKind, Nav};
 use super::{App, Command};
+use crate::search_bars::FIRST_BAR;
 
-/// Widget id of the search box, shared with the input handling.
+/// Widget id of the first search bar, shared with the input handling.
 pub(crate) fn search_id() -> egui::Id {
     egui::Id::new("everythux_search_box")
+}
+
+/// Widget id of search bar `bar` (by its stable id, so focus survives closing a bar above it).
+pub(crate) fn bar_widget_id(bar: u32) -> egui::Id {
+    if bar == FIRST_BAR {
+        search_id()
+    } else {
+        egui::Id::new(("everythux_search_bar", bar))
+    }
 }
 
 impl App {
@@ -40,21 +50,27 @@ impl App {
         self.show_windows(&ctx);
         self.sync_popups();
         self.drive_preview(&ctx);
+        self.sync_window_title();
     }
 
     /// Reads global shortcuts and table keys from the input of this frame and consumes them.
     pub(crate) fn read_input_commands(&self, ctx: &egui::Context) -> Vec<Command> {
         let text_focused = ctx.egui_wants_keyboard_input();
-        let search_focused = ctx.memory(|m| m.has_focus(search_id()));
+        let focused_bar = self.focused_bar_in(ctx, false);
+        let search_focused = focused_bar.is_some();
         let popup_open = ctx.any_popup_open() || egui::Popup::is_any_open(ctx);
         // Ctrl+C copies selected preview text instead of paths (the text view handles it).
         let has_selection = !self.selection.is_empty() && !self.preview_text_selected();
         // While the rename editor is open, typed keys belong to it: only Ctrl+Shift+R and Ctrl+Q
         // stay global, and the editor consumes Enter, Tab and Escape itself.
         let editing = self.rename.is_some();
+        // The search bar shortcuts work from the list and from any bar, but not while a text
+        // field in a window (an exclusion rule, say) is being edited.
+        let bar_keys = !editing && !popup_open && (!text_focused || focused_bar.is_some());
+        let mut switched_focus = false;
         let b = &self.bindings;
 
-        ctx.input_mut(|i| {
+        let commands = ctx.input_mut(|i| {
             let mut commands = Vec::new();
             // Most specific shortcuts first: egui ignores extra Shift, so Ctrl+Shift+R must be
             // tested before a plain Ctrl+R binding could match it.
@@ -77,6 +93,24 @@ impl App {
             }
             if !editing && !popup_open && i.consume_key(Modifiers::NONE, Key::Escape) {
                 commands.push(Command::Escape);
+            }
+            if bar_keys {
+                if i.consume_shortcut(&b.add_search_bar) {
+                    commands.push(Command::AddSearchBar);
+                }
+                // Consumed in the first bar too, where it does nothing: the text field would
+                // otherwise take Ctrl+W as "delete word", which is not what the binding promises.
+                if focused_bar.is_some() && i.consume_shortcut(&b.close_search_bar) {
+                    commands.push(Command::CloseSearchBar);
+                }
+                // Shift reverses the direction; with only two stops (list and newest bar) both
+                // directions toggle. Test the Shift form first, as egui ignores an extra Shift.
+                let switch = b.switch_focus;
+                let reverse = KeyboardShortcut::new(switch.modifiers | Modifiers::SHIFT, switch.logical_key);
+                if i.consume_shortcut(&reverse) || i.consume_shortcut(&switch) {
+                    commands.push(Command::SwitchFocus);
+                    switched_focus = true;
+                }
             }
 
             // Keys for the result table. Up/Down/Page and Enter also work while the search box
@@ -135,7 +169,13 @@ impl App {
                 }
             }
             commands
-        })
+        });
+        if switched_focus {
+            // egui turned the Tab into focus traversal when the frame began; cancel that, so Tab
+            // never walks through the table cells.
+            ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
+        }
+        commands
     }
 
     fn show_banners(&mut self, ui: &mut egui::Ui) {

@@ -77,10 +77,31 @@ These are buttons or settings in the UI and flags in the CLI. They apply to the 
 - **Regular expression** treats the whole input as one regular expression (Rust `regex` syntax) and
   disables the operators above. An invalid expression is reported and the previous results stay.
 
+## Several search bars
+
+Click `+` at the right edge of the search box (or press `Ctrl+T`) to add another search bar below it.
+The bars are combined with AND: a file is listed only if it matches every non-empty bar. Start broad and
+narrow down, for example `ext:pdf` in the first bar, `invoice` in the second and `dm:thisyear` in the
+third.
+
+- Each bar is parsed **on its own**. An unclosed quote or a trailing `|` in one bar never joins it to
+  the next, and a bare `case:` only makes its own bar case-sensitive.
+- Within a bar the usual rules apply, so a bar with `jpg|png` is still an OR.
+- Empty bars are ignored.
+- The switches (case-sensitive, match full path, regular expression) apply to every bar. In regular
+  expression mode each bar is its own expression.
+- Close an extra bar with its `×` button or `Ctrl+W`. The first bar can't be closed. There are at most
+  8 bars, and the extra bars are not kept across restarts.
+- `Tab` moves between the result list and the newest (bottom-most) bar. See
+  [shortcuts.md](shortcuts.md).
+- The status bar and the window title show the combined query, for example
+  `rust AND path:src AND dm:thisweek`.
+
 ## Errors
 
 If a query can't be parsed (an unknown filter, an unclosed quote, a bad regular expression), the search
-box shows the reason and keeps the previous results. `everythux-cli search` prints the error and exits
+box shows the reason and keeps the previous results. With several bars the reason appears under the bar
+that failed. `everythux-cli search` prints the error and exits
 with status 1.
 
 ## Examples
