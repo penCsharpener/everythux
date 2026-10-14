@@ -233,6 +233,32 @@ pub enum Theme {
     Dark,
 }
 
+/// What the right-click menu of a result shows besides the built-in entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContextMenuConfig {
+    /// "Open with" applications for the file type.
+    pub open_with: bool,
+    /// File-type specific actions installed by other programs (KDE service menus, Nemo and Thunar
+    /// actions).
+    pub service_menus: bool,
+    /// Entry ids hidden from the menu (menu → Hide an entry).
+    pub hidden: Vec<String>,
+    /// Entry ids shown first, in this order; entries not listed keep their natural order after them.
+    pub order: Vec<String>,
+}
+
+impl Default for ContextMenuConfig {
+    fn default() -> Self {
+        Self {
+            open_with: true,
+            service_menus: true,
+            hidden: Vec::new(),
+            order: Vec::new(),
+        }
+    }
+}
+
 /// UI settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -246,6 +272,8 @@ pub struct UiConfig {
     pub sort: SortConfig,
     /// Preview pane.
     pub preview_pane: PreviewPaneConfig,
+    /// Extra entries of the row context menu.
+    pub context_menu: ContextMenuConfig,
     /// Target of the "properties" double-click.
     pub properties_target: PropertiesTarget,
     /// Size formatting.
@@ -277,6 +305,7 @@ impl Default for UiConfig {
             lock_column_widths: false,
             sort: SortConfig::default(),
             preview_pane: PreviewPaneConfig::default(),
+            context_menu: ContextMenuConfig::default(),
             properties_target: PropertiesTarget::default(),
             size_format: SizeFormat::default(),
             date_format: "%Y-%m-%d %H:%M".to_owned(),
@@ -536,5 +565,18 @@ mod tests {
         let config = Config::from_json(r#"{ "ui": { "columns": [] } }"#, Path::new("c.json"))
             .expect("old config loads");
         assert!(!config.ui.lock_column_widths);
+    }
+
+    #[test]
+    fn context_menu_defaults_when_missing() {
+        let config = Config::from_json(
+            r#"{ "ui": { "context_menu": { "hidden": ["x"] } } }"#,
+            Path::new("c.json"),
+        )
+        .expect("loads");
+        let menu = &config.ui.context_menu;
+        assert!(menu.open_with && menu.service_menus);
+        assert_eq!(menu.hidden, ["x"]);
+        assert_eq!(Config::default().ui.context_menu.order, Vec::<String>::new());
     }
 }

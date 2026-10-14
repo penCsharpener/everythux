@@ -44,6 +44,15 @@ pub(crate) enum Effect {
         mode: ScanMode,
     },
     CopyText(String),
+    /// Run an "Open with" application or a file action on these paths.
+    Launch {
+        launcher: everythux_platform::actions::Launcher,
+        paths: Vec<PathBuf>,
+    },
+    /// Put these files on the clipboard as a file list.
+    CopyFiles(Vec<PathBuf>),
+    /// Move these to the trash.
+    Trash(Vec<PathBuf>),
 }
 
 /// Keyboard navigation in the table.
@@ -75,6 +84,14 @@ pub(crate) enum ContextAction {
     ExcludeFolder,
     Reindex(ScanMode),
     Rename,
+    /// Run entry `n` of `App::context_extras`.
+    Launch(usize),
+    /// Hide entry `n` of `App::context_extras` from the menu.
+    HideEntry(usize),
+    /// Copy the selected files to the clipboard as a file list.
+    CopyFiles,
+    /// Move the selection to the trash.
+    Trash,
 }
 
 impl App {
@@ -106,6 +123,7 @@ impl App {
                 if !self.selection.contains(row) {
                     self.selection.select_only(row);
                 }
+                self.refresh_context_extras();
                 Vec::new()
             }
         }
@@ -199,10 +217,54 @@ impl App {
                 self.start_rename(row);
                 Vec::new()
             }
+            ContextAction::Launch(index) => {
+                let Some(entry) = self.context_extras.entries.get(index) else {
+                    return Vec::new();
+                };
+                single(Some(Effect::Launch {
+                    launcher: entry.launcher.clone(),
+                    paths: self.context_extras.paths.clone(),
+                }))
+            }
+            ContextAction::HideEntry(index) => {
+                self.hide_context_entry(index);
+                Vec::new()
+            }
+            ContextAction::CopyFiles => {
+                let paths = self.context_paths(row);
+                if paths.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Effect::CopyFiles(paths)]
+                }
+            }
+            ContextAction::Trash => {
+                let paths = self.context_paths(row);
+                if paths.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Effect::Trash(paths)]
+                }
+            }
             ContextAction::Reindex(mode) => single(
                 self.reindex_target(row)
                     .map(|path| Effect::Reindex { path, mode }),
             ),
+        }
+    }
+
+    /// The paths a context-menu entry acts on: the selection if `row` is part of it, else `row`.
+    fn context_paths(&self, row: usize) -> Vec<PathBuf> {
+        let Some(results) = &self.results else {
+            return Vec::new();
+        };
+        if self.selection.contains(row) {
+            self.selection
+                .rows()
+                .filter_map(|r| results.full_path(r))
+                .collect()
+        } else {
+            results.full_path(row).into_iter().collect()
         }
     }
 
@@ -327,6 +389,11 @@ impl App {
                     );
                     self.backend.submit_job(Job::RescanPath { path, mode });
                 }
+                Effect::Launch { launcher, paths } => {
+                    self.backend.platform(PlatformAction::Launch { launcher, paths });
+                }
+                Effect::CopyFiles(paths) => self.backend.platform(PlatformAction::CopyFiles(paths)),
+                Effect::Trash(paths) => self.backend.platform(PlatformAction::Trash(paths)),
                 Effect::CopyText(text) => {
                     let count = text.lines().count();
                     self.ctx.copy_text(text);

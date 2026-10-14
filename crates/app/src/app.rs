@@ -6,6 +6,7 @@
 //! is exercised directly by the tests.
 
 mod commands;
+mod context_menu;
 mod events;
 mod frame;
 mod interact;
@@ -24,6 +25,7 @@ use everythux_core::model::VolumeInfo;
 use everythux_core::snapshot::IndexSnapshot;
 
 pub(crate) use commands::Command;
+pub(crate) use context_menu::ContextExtras;
 pub(crate) use frame::bar_widget_id;
 #[cfg(test)]
 pub(crate) use frame::search_id;
@@ -107,6 +109,12 @@ pub(crate) struct App {
     /// Rows that fit in the table viewport (for Page Up/Down); updated by the table.
     pub(crate) visible_rows: usize,
     pub(crate) cache: RowCache,
+    /// Installed applications and file actions for the context menu (empty until loaded).
+    pub(crate) actions: Arc<everythux_platform::actions::ActionCatalog>,
+    /// `egui` time the catalog was last requested.
+    pub(crate) actions_loaded_at: f64,
+    /// Extra context-menu entries for the selection that was right-clicked last.
+    pub(crate) context_extras: ContextExtras,
 
     /// Latest snapshot published by the indexer.
     pub(crate) snapshot: Arc<IndexSnapshot>,
@@ -173,6 +181,9 @@ impl App {
             scroll_to_row: None,
             visible_rows: 20,
             cache: RowCache::default(),
+            actions: Arc::default(),
+            actions_loaded_at: 0.0,
+            context_extras: ContextExtras::default(),
             snapshot: Arc::new(IndexSnapshot::empty()),
             index: IndexStatus::default(),
             volumes: Vec::new(),
@@ -188,6 +199,7 @@ impl App {
             quit_requested: false,
         };
         app.apply_theme();
+        app.backend.load_actions();
         app.resubmit_search();
         app
     }

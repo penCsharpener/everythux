@@ -9,6 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+chrono.workspace = true
 mime_guess.workspace = true
 percent-encoding.workspace = true
 rustix.workspace = true

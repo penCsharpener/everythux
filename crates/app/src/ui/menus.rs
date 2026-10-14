@@ -120,6 +120,32 @@ impl App {
                 commands.push(Command::ToggleLockColumnWidths);
             }
         });
+        ui.menu_button("Context menu", |ui| {
+            let menu = &cfg.context_menu;
+            let (mut open_with, mut service) = (menu.open_with, menu.service_menus);
+            if ui.checkbox(&mut open_with, "Show \"Open with\"").changed() {
+                commands.push(Command::ToggleContextOpenWith);
+            }
+            if ui
+                .checkbox(&mut service, "Show actions of other programs")
+                .on_hover_text("KDE service menus, Nemo actions and Thunar custom actions")
+                .changed()
+            {
+                commands.push(Command::ToggleContextServiceMenus);
+            }
+            ui.separator();
+            let hidden = menu.hidden.len();
+            if ui
+                .add_enabled(
+                    hidden > 0,
+                    Button::new(format!("Restore hidden entries ({hidden})")),
+                )
+                .clicked()
+            {
+                commands.push(Command::RestoreHiddenContextEntries);
+                ui.close();
+            }
+        });
         ui.menu_button("Theme", |ui| {
             for (theme, label) in [
                 (Theme::System, "System"),

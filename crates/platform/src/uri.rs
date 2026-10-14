@@ -30,6 +30,11 @@ pub fn file_uri(path: &Path) -> String {
     uri
 }
 
+/// Percent-encodes raw path bytes the way `file_uri` does, without the scheme.
+pub(crate) fn encode_path(path: &Path) -> String {
+    percent_encode(path.as_os_str().as_bytes(), ENCODE).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;

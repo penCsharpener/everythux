@@ -6,11 +6,18 @@
 //! - [`mime`]: human-readable file type names for the Type column.
 //! - [`udisks`]: block devices (including unmounted ext4 partitions) and mounting via UDisks2.
 
+pub mod actions;
+pub mod clipboard;
+mod desktop_entry;
 mod error;
+mod exec;
 pub mod file_manager;
 pub mod fileops;
 pub mod mime;
+pub mod mimetype;
+pub mod trash;
 pub mod udisks;
 pub mod uri;
 
 pub use error::PlatformError;
+pub use exec::{Dialect, ExecContext, expand as expand_exec};

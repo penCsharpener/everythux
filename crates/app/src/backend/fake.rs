@@ -33,6 +33,7 @@ pub(crate) enum Call {
         encoding: TextEncoding,
     },
     Platform(PlatformAction),
+    LoadActions,
     ListDevices(Vec<String>),
     Mount(String),
     Compute(&'static str),
@@ -241,16 +242,24 @@ impl Backend for FakeBackend {
             s.calls.push(Call::Platform(action.clone()));
             s.properties_unsupported
         };
-        if matches!(action, PlatformAction::Rename { .. }) {
-            // Renames answer with `BackendEvent::Renamed`, which the test injects.
+        if matches!(action, PlatformAction::Rename { .. } | PlatformAction::Trash(_)) {
+            // These answer with their own events, which the test injects.
             return;
         }
         let result = if unsupported && matches!(action, PlatformAction::ShowProperties(_)) {
             Err(PlatformError::Unsupported("no ShowItemProperties"))
         } else {
-            Ok(Method::FileManager1)
+            Ok(match action {
+                PlatformAction::Launch { .. } => Method::Launched,
+                PlatformAction::CopyFiles(_) => Method::Clipboard,
+                _ => Method::FileManager1,
+            })
         };
         let _ = self.tx.send(BackendEvent::Platform { action, result });
+    }
+
+    fn load_actions(&self) {
+        self.record(Call::LoadActions);
     }
 
     fn list_devices(&self, fs_types: Vec<String>) {
