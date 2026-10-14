@@ -21,6 +21,14 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   `*` lists everything. Search bar shortcuts moved to `Ctrl+Shift+T`/`Ctrl+Shift+W`; config version 2.
   Window resizes only change the Path column, with View → Columns → Lock column widths
   (`ui.lock_column_widths`); the text preview has a Copy button and a right-click menu.
+- 0.7.0: richer row context menu. **Open with ▸** lists the applications for the file type (default
+  first, from `mimeapps.list`); file-type actions installed by other programs are shown too: KDE service
+  menus (`kio/servicemenus`), Nemo actions and Thunar custom actions (`uca.xml`), grouped into their
+  submenus. Also **Copy file** (clipboard as `text/uri-list`, needs `wl-copy` or `xclip`) and
+  **Move to Trash** (freedesktop Trash spec, never copies across filesystems). `ui.context_menu` can turn
+  the extra entries off, hide entries (menu → Hide an entry; View → Context menu restores them) and
+  order them (`order`: list of entry ids). Not covered: plugin-only Dolphin entries (Ark, share, git),
+  Nemo actions with `Conditions=`, entry icons, and a graphical editor for the order.
 
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
