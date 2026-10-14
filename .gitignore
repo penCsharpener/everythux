@@ -4,3 +4,4 @@
 *.db-shm
 /target-agents
 /dist
+/.claude/worktrees
