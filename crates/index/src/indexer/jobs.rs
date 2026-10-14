@@ -517,3 +517,41 @@ pub(super) fn refresh_dirs(
     out.add_store(update.commit()?);
     Ok(finish(tracker, out))
 }
+
+/// The app renamed `from` to `to` on disk: move the index entry (and a folder's subtree paths)
+/// in one transaction, with no walk.
+///
+/// Falls back to [`refresh_dirs`] on both paths when the shortcut can't be right: `from` isn't
+/// indexed (it was excluded or never scanned), `to` is excluded now (the old entry is removed and
+/// the new one is not added), or the new name already exists in the index.
+pub(super) fn renamed(
+    ctx: &Ctx<'_>,
+    store: &mut Store,
+    tracker: &mut Tracker,
+    from: &Path,
+    to: &Path,
+) -> Result<Outcome, IndexError> {
+    // Validates the request even when the fallback ends up doing the work.
+    let invalid = |reason: &'static str| IndexError::InvalidRename {
+        from: from.to_owned(),
+        to: to.to_owned(),
+        reason,
+    };
+    if from.parent().is_none() || from.parent() != to.parent() {
+        return Err(invalid("a rename must stay in the same folder"));
+    }
+    let is_dir = std::fs::symlink_metadata(to).ok().map(|m| m.is_dir());
+    let excluded = is_dir.is_some_and(|d| ctx.exclusions.is_excluded(to, d));
+    if is_dir.is_some() && !excluded {
+        let stats = store.rename_path(from, to)?;
+        if stats.applied {
+            let renamed = 1 + stats.dirs_rewritten;
+            return Ok(Outcome {
+                changed: true,
+                upserted: renamed,
+                ..Outcome::default()
+            });
+        }
+    }
+    refresh_dirs(ctx, store, tracker, &[from.to_owned(), to.to_owned()])
+}

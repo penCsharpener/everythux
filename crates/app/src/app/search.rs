@@ -75,6 +75,7 @@ impl App {
             }
             self.scroll_to_row = None;
             self.cache.invalidate();
+            self.follow_rename_in(&view);
         }
         self.results = Some(view);
     }

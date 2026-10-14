@@ -35,6 +35,12 @@ impl App {
             BackendEvent::Search(res) => self.on_search_results(res),
             BackendEvent::Preview(res) => self.on_preview_result(res),
             BackendEvent::Platform { action, result } => self.on_platform_outcome(action, result),
+            BackendEvent::Renamed {
+                from,
+                new_name,
+                undo,
+                result,
+            } => self.on_renamed(&from, &new_name, undo, result),
             BackendEvent::Devices(result) => self.on_devices(result),
             BackendEvent::Mounted { object_path, result } => self.on_mounted(&object_path, result),
             BackendEvent::ExclusionPreview(preview) => self.on_exclusion_preview(preview),
@@ -89,6 +95,8 @@ impl App {
                     ToastKind::Info,
                 );
             }
+            // Renames report through `BackendEvent::Renamed`.
+            (PlatformAction::Rename { .. }, Ok(_)) => {}
             (PlatformAction::ShowProperties(_), Ok(method)) => {
                 self.toast(
                     format!("Opened properties ({})", method_label(method)),

@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 mime_guess.workspace = true
 percent-encoding.workspace = true
+rustix.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 zbus.workspace = true

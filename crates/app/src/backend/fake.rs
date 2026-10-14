@@ -208,6 +208,10 @@ impl Backend for FakeBackend {
             s.calls.push(Call::Platform(action.clone()));
             s.properties_unsupported
         };
+        if matches!(action, PlatformAction::Rename { .. }) {
+            // Renames answer with `BackendEvent::Renamed`, which the test injects.
+            return;
+        }
         let result = if unsupported && matches!(action, PlatformAction::ShowProperties(_)) {
             Err(PlatformError::Unsupported("no ShowItemProperties"))
         } else {

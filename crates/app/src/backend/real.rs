@@ -8,7 +8,9 @@ use everythux_core::config::Config;
 use everythux_core::paths::AppPaths;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{Indexer, IndexerSettings, Job};
+use everythux_platform::PlatformError;
 use everythux_platform::file_manager;
+use everythux_platform::fileops;
 use everythux_platform::mime::{self, Category};
 use everythux_platform::udisks;
 use everythux_preview::{PreviewLimits, PreviewService};
@@ -92,10 +94,22 @@ impl RealBackend {
             events.clone(),
             ctx.clone(),
             |action: PlatformAction| {
+                if let PlatformAction::Rename { from, new_name, undo } = action {
+                    let result = fileops::rename_in_place(&from, &new_name).map_err(|e| e.to_string());
+                    return vec![BackendEvent::Renamed {
+                        from,
+                        new_name,
+                        undo,
+                        result,
+                    }];
+                }
                 let result = match &action {
                     PlatformAction::OpenDefault(p) => file_manager::open_default(p),
                     PlatformAction::ShowItem(p) => file_manager::show_item(p),
                     PlatformAction::ShowProperties(t) => file_manager::show_properties(&t.path),
+                    PlatformAction::Rename { .. } => {
+                        Err(PlatformError::Unsupported("rename is handled separately"))
+                    }
                 };
                 vec![BackendEvent::Platform { action, result }]
             },

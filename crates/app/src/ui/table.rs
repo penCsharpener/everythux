@@ -13,11 +13,13 @@ use everythux_index::ScanMode;
 use everythux_platform::mime::Category;
 
 use super::icons;
+use super::rename_editor::{EditorEvent, rename_editor};
 use crate::app::CopyKind;
 use crate::app::{App, CellEvent, ContextAction, ROW_HEIGHT};
 use crate::backend::Backend;
 use crate::format::{format_local, format_size};
 use crate::model::ResultsView;
+use crate::rename::RenameEdit;
 use crate::selection::Selection;
 
 const HEADER_HEIGHT: f32 = 22.0;
@@ -134,6 +136,10 @@ pub(crate) struct TableOutput {
     pub(crate) header_click: Option<ColumnId>,
     pub(crate) widths: Vec<(ColumnId, f32)>,
     pub(crate) context: Vec<(usize, ContextAction)>,
+    /// What the rename editor reported this frame.
+    pub(crate) editor: Option<EditorEvent>,
+    /// The rename editor was drawn this frame.
+    pub(crate) editor_drawn: bool,
 }
 
 struct TableParams<'a> {
@@ -192,33 +198,60 @@ fn cell_content(ui: &mut Ui, id: ColumnId, row: &CachedRow) {
     }
 }
 
-fn context_menu(ui: &mut Ui, row: usize, out: &mut Vec<(usize, ContextAction)>) {
-    let mut pick = |ui: &mut Ui, label: &str, action: ContextAction| {
-        if ui.button(label).clicked() {
-            out.push((row, action));
-            ui.close();
-        }
-    };
-    pick(ui, "Open", ContextAction::Open);
-    pick(ui, "Open containing folder", ContextAction::OpenFolder);
+fn pick(ui: &mut Ui, out: &mut Vec<(usize, ContextAction)>, row: usize, label: &str, action: ContextAction) {
+    if ui.button(label).clicked() {
+        out.push((row, action));
+        ui.close();
+    }
+}
+
+fn context_menu(ui: &mut Ui, row: usize, renamable: bool, out: &mut Vec<(usize, ContextAction)>) {
+    pick(ui, out, row, "Open", ContextAction::Open);
+    pick(ui, out, row, "Open containing folder", ContextAction::OpenFolder);
     ui.separator();
-    pick(ui, "Copy full path", ContextAction::Copy(CopyKind::FullPath));
-    pick(ui, "Copy name", ContextAction::Copy(CopyKind::Name));
-    pick(ui, "Copy folder path", ContextAction::Copy(CopyKind::FolderPath));
+    pick(
+        ui,
+        out,
+        row,
+        "Copy full path",
+        ContextAction::Copy(CopyKind::FullPath),
+    );
+    pick(ui, out, row, "Copy name", ContextAction::Copy(CopyKind::Name));
+    pick(
+        ui,
+        out,
+        row,
+        "Copy folder path",
+        ContextAction::Copy(CopyKind::FolderPath),
+    );
     ui.separator();
-    pick(ui, "Properties…", ContextAction::Properties);
-    pick(ui, "Exclude folder…", ContextAction::ExcludeFolder);
+    let rename = ui
+        .add_enabled(renamable, egui::Button::new("Rename…").shortcut_text("F2"))
+        .on_disabled_hover_text("Rename needs a single item on an online volume");
+    if rename.clicked() {
+        out.push((row, ContextAction::Rename));
+        ui.close();
+    }
+    pick(ui, out, row, "Properties…", ContextAction::Properties);
+    pick(ui, out, row, "Exclude folder…", ContextAction::ExcludeFolder);
     ui.menu_button("Re-index this folder", |ui| {
         pick(
             ui,
+            out,
+            row,
             "Quick (changed folders only)",
             ContextAction::Reindex(ScanMode::Quick),
         );
-        pick(ui, "Full", ContextAction::Reindex(ScanMode::Full));
+        pick(ui, out, row, "Full", ContextAction::Reindex(ScanMode::Full));
     });
 }
 
-fn draw_table(ui: &mut Ui, p: &TableParams<'_>, cache: &mut RowCache) -> TableOutput {
+fn draw_table(
+    ui: &mut Ui,
+    p: &TableParams<'_>,
+    cache: &mut RowCache,
+    rename: &mut Option<RenameEdit>,
+) -> TableOutput {
     let mut out = TableOutput::default();
     ui.style_mut().interaction.selectable_labels = false;
 
@@ -273,7 +306,21 @@ fn draw_table(ui: &mut Ui, p: &TableParams<'_>, cache: &mut RowCache) -> TableOu
             let cached = cache.get(idx, p.size_format, p.date_format, || {
                 build_row(p.view, idx, p.backend, p.size_format, p.date_format)
             });
+            let editing_row = rename.as_ref().is_some_and(|e| e.row == idx);
+            // Rename is for one item on an online volume; right-clicking an unselected row
+            // selects just that row first.
+            let renamable = !cached.offline && (p.selection.len() <= 1 || !p.selection.contains(idx));
             for col in p.columns {
+                if editing_row && col.id == ColumnId::Name {
+                    if let Some(edit) = rename.as_mut() {
+                        row.col(|ui| {
+                            icons::icon(ui, cached.category, cached.offline);
+                            out.editor = rename_editor(ui, edit);
+                            out.editor_drawn = true;
+                        });
+                    }
+                    continue;
+                }
                 let (_, resp) = row.col(|ui| cell_content(ui, col.id, cached));
                 let mods: Modifiers = resp.ctx.input(|i| i.modifiers);
                 if resp.double_clicked() {
@@ -284,7 +331,7 @@ fn draw_table(ui: &mut Ui, p: &TableParams<'_>, cache: &mut RowCache) -> TableOu
                 if resp.secondary_clicked() {
                     out.cell_events.push((idx, col.id, CellEvent::Secondary));
                 }
-                resp.context_menu(|ui| context_menu(ui, idx, &mut out.context));
+                resp.context_menu(|ui| context_menu(ui, idx, renamable, &mut out.context));
             }
         });
     });
@@ -323,13 +370,24 @@ impl App {
         };
         let out = egui::ScrollArea::horizontal()
             .auto_shrink([false, false])
-            .show(ui, |ui| draw_table(ui, &params, &mut self.cache))
+            .show(ui, |ui| {
+                draw_table(ui, &params, &mut self.cache, &mut self.rename)
+            })
             .inner;
 
         let dragging = ui.input(|i| i.pointer.any_down());
         self.update_column_widths(&out.widths, dragging);
         if let Some(column) = out.header_click {
             self.sort_by(column);
+        }
+        // The editor's outcome first: a click elsewhere both ends the edit and selects.
+        match out.editor {
+            Some(EditorEvent::Commit(trigger)) => self.commit_rename(trigger),
+            Some(EditorEvent::Cancel) => self.cancel_rename(),
+            None if !out.editor_drawn && self.rename.as_ref().is_some_and(|e| e.shown) => {
+                self.commit_rename(crate::app::CommitTrigger::Hidden);
+            }
+            None => {}
         }
         for (row, column, event) in out.cell_events {
             let effects = self.on_cell_event(row, column, event);

@@ -18,6 +18,7 @@ mod keys;
 mod model;
 mod preview;
 mod properties;
+mod rename;
 mod runtime;
 mod selection;
 mod status;

@@ -236,6 +236,9 @@ pub struct UiConfig {
     pub date_format: String,
     /// Theme.
     pub theme: Theme,
+    /// Start an inline rename when the already-selected Name cell is clicked again (slowly, not as
+    /// part of a double-click). Off by default so double-click-to-open never turns into a rename.
+    pub rename_on_slow_click: bool,
 }
 
 impl Default for UiConfig {
@@ -259,6 +262,7 @@ impl Default for UiConfig {
             size_format: SizeFormat::default(),
             date_format: "%Y-%m-%d %H:%M".to_owned(),
             theme: Theme::default(),
+            rename_on_slow_click: false,
         }
     }
 }

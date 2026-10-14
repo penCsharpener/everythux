@@ -41,6 +41,7 @@ and `enabled`. See [exclusions.md](exclusions.md) for the semantics and the defa
 | `sort` | `{ "column": "name", "ascending": true }` | Sort order of the result table |
 | `preview_pane` | `{ "enabled": false, "width": 360, "max_file_size": 536870912 }` | Preview pane. Files larger than `max_file_size` bytes (512 MiB) are not previewed |
 | `properties_target` | `"parent"` | What a Size or Modified double-click shows properties for: `"parent"` (containing folder) or `"item"` |
+| `rename_on_slow_click` | `false` | Start an inline rename with a slow second click on the selected row's name (F2 and the context menu always work) |
 | `size_format` | `"binary"` | `"binary"` (KiB, MiB), `"si"` (kB, MB) or `"bytes"` (exact) |
 | `date_format` | `"%Y-%m-%d %H:%M"` | [`chrono` strftime](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) format for the Date Modified column |
 | `theme` | `"system"` | `"system"`, `"light"` or `"dark"` |

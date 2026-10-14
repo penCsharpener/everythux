@@ -11,6 +11,7 @@ mod workers;
 #[cfg(test)]
 pub(crate) mod fake;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -36,6 +37,14 @@ pub(crate) enum PlatformAction {
     ShowItem(PathBuf),
     /// Ask the file manager for its properties dialog (Size / Modified double-click).
     ShowProperties(PropTarget),
+    /// Rename `from` inside its folder (blocking `rename(2)`; the outcome arrives as
+    /// [`BackendEvent::Renamed`], not as [`BackendEvent::Platform`]). `undo` marks a rename that
+    /// reverts an earlier one.
+    Rename {
+        from: PathBuf,
+        new_name: OsString,
+        undo: bool,
+    },
 }
 
 impl PlatformAction {
@@ -45,6 +54,9 @@ impl PlatformAction {
             Self::OpenDefault(p) => format!("Open {}", p.display()),
             Self::ShowItem(p) => format!("Show {} in folder", p.display()),
             Self::ShowProperties(t) => format!("Properties of {}", t.path.display()),
+            Self::Rename { from, new_name, .. } => {
+                format!("Rename {} to {}", from.display(), new_name.to_string_lossy())
+            }
         }
     }
 }
@@ -94,6 +106,13 @@ pub(crate) enum BackendEvent {
     Platform {
         action: PlatformAction,
         result: Result<Method, PlatformError>,
+    },
+    /// Outcome of [`PlatformAction::Rename`]: the new absolute path, or the user-facing error.
+    Renamed {
+        from: PathBuf,
+        new_name: OsString,
+        undo: bool,
+        result: Result<PathBuf, String>,
     },
     Devices(Result<Vec<BlockDevice>, String>),
     Mounted {

@@ -27,6 +27,7 @@ mod apply;
 mod exclusions;
 mod idmap;
 mod rebuild;
+mod rename;
 mod schema;
 mod snapshot;
 mod totals;
@@ -43,6 +44,7 @@ use crate::IndexError;
 use crate::discovery::DiscoveredVolume;
 
 pub use rebuild::Rebuild;
+pub use rename::RenameStats;
 pub use update::{ApplyStats, DirRef, Update};
 
 /// Handle to `index.db`. One `Store` per thread; the indexer owns the single writer.

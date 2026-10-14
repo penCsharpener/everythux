@@ -97,6 +97,33 @@ impl ResultsView {
             .is_some_and(|id| self.snapshot.entries.kind[id.index()].is_dir())
     }
 
+    /// Row listing the entry with this full path.
+    pub(crate) fn find_path(&self, path: &Path) -> Option<usize> {
+        use std::os::unix::ffi::OsStrExt as _;
+        let name = path.file_name()?.as_bytes();
+        let snap = &*self.snapshot;
+        self.ids
+            .iter()
+            .position(|&id| snap.name(id) == name && snap.full_path(id) == path)
+    }
+
+    /// Raw name bytes of the entry in `row`.
+    pub(crate) fn name_bytes(&self, row: usize) -> Option<&[u8]> {
+        self.entry(row).map(|id| self.snapshot.name(id))
+    }
+
+    /// Whether the entry in `row` lives on a volume that is offline.
+    pub(crate) fn is_offline(&self, row: usize) -> bool {
+        use everythux_core::model::VolumeState;
+        self.entry(row).is_some_and(|id| {
+            let snap = &*self.snapshot;
+            let volume = snap.dirs.volume[snap.entries.dir[id.index()].index()];
+            snap.volumes
+                .get(volume.index())
+                .is_some_and(|v| v.state == VolumeState::Offline)
+        })
+    }
+
     /// Properties target for the entry in `row`: the containing folder (the folder itself for folder
     /// rows) when `mode` is `Parent`, else the item.
     pub(crate) fn prop_target(&self, row: usize, mode: PropertiesTarget) -> Option<PropTarget> {

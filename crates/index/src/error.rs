@@ -27,6 +27,16 @@ pub enum IndexError {
     /// No indexed volume contains the requested path / uuid.
     #[error("not part of any indexed volume: {0}")]
     UnknownVolume(String),
+    /// A rename request that can't be applied to the index.
+    #[error("cannot rename {from:?} to {to:?}: {reason}")]
+    InvalidRename {
+        /// Old path.
+        from: PathBuf,
+        /// New path.
+        to: PathBuf,
+        /// What is wrong with the request.
+        reason: &'static str,
+    },
     /// The job was cancelled.
     #[error("cancelled")]
     Cancelled,

@@ -98,6 +98,34 @@ fn store_benches(c: &mut Criterion) {
         b.iter(|| std::hint::black_box(store.load_snapshot().expect("snapshot")));
     });
     group.finish();
+    drop(store);
+
+    // Renaming a folder with 10 000 descendant folders: pure SQLite, no disk access.
+    let big_tree = bench_dir();
+    let big = big_tree.path().join("big");
+    std::fs::create_dir(&big).expect("create big");
+    let made = generate_tree(&big, 20_000, 10_000, 7).expect("generate big tree");
+    let big_work = bench_dir();
+    let big_db = big_work.path().join("index.db");
+    let (indexer, rx) = Indexer::start(&big_db, settings(big_tree.path())).expect("start");
+    wait_finished(&rx);
+    drop(indexer);
+    let mut store = Store::open(&big_db).expect("open");
+    let (a, b) = (big_tree.path().join("big"), big_tree.path().join("big2"));
+    let mut group = c.benchmark_group("store");
+    group.throughput(Throughput::Elements(made.dirs as u64));
+    // Declared outside: criterion calls the closure once per sample, the folder keeps moving.
+    let mut forward = true;
+    group.bench_function("rename_folder", |bench| {
+        bench.iter(|| {
+            let (from, to) = if forward { (&a, &b) } else { (&b, &a) };
+            forward = !forward;
+            let stats = store.rename_path(from, to).expect("rename");
+            assert!(stats.applied);
+            std::hint::black_box(stats)
+        });
+    });
+    group.finish();
 }
 
 criterion_group!(benches, store_benches);

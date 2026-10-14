@@ -624,3 +624,433 @@ fn a_background_reindex_keeps_the_selected_entry_and_its_preview() {
     assert!(app.preview.shown.is_some(), "preview dropped");
     assert!(r.harness.query_by_label("hello from the preview pane").is_some());
 }
+
+// --- Inline rename ------------------------------------------------------------------------
+
+mod rename {
+    use std::path::PathBuf;
+
+    use egui_kittest::kittest::NodeT as _;
+
+    use super::*;
+    use crate::ui::rename_editor::editor_id;
+
+    const NOTES: &str = "/home/me/docs/notes.txt";
+
+    fn rename_action(from: &str, to: &str, undo: bool) -> PlatformAction {
+        PlatformAction::Rename {
+            from: from.into(),
+            new_name: to.into(),
+            undo,
+        }
+    }
+
+    /// Selects `notes.txt` and presses F2.
+    fn editing() -> Rig {
+        let mut r = rig();
+        r.show_default();
+        r.click_cell("notes.txt", Modifiers::NONE);
+        r.harness.key_press(Key::F2);
+        r.harness.run_steps(4);
+        r
+    }
+
+    fn type_text(r: &mut Rig, text: &str) {
+        r.harness.event(egui::Event::Text(text.to_owned()));
+        r.harness.run_steps(3);
+    }
+
+    /// Replaces the whole text of the editor.
+    fn replace_text(r: &mut Rig, text: &str) {
+        r.harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        r.harness.run_steps(2);
+        if text.is_empty() {
+            press(r, Key::Backspace);
+        } else {
+            type_text(r, text);
+        }
+    }
+
+    fn press(r: &mut Rig, key: Key) {
+        r.harness.key_press(key);
+        r.harness.run_steps(3);
+    }
+
+    fn buffer(r: &Rig) -> Option<String> {
+        r.harness.state().rename.as_ref().map(|e| e.buffer.clone())
+    }
+
+    #[test]
+    fn f2_opens_the_editor_with_the_stem_selected() {
+        let r = editing();
+        assert_eq!(buffer(&r).as_deref(), Some("notes.txt"));
+        let ctx = &r.harness.ctx;
+        assert!(ctx.memory(|m| m.has_focus(editor_id())), "the editor is focused");
+        let state = egui::text_edit::TextEditState::load(ctx, editor_id()).expect("editor state");
+        let range = state.cursor.char_range().expect("a selection");
+        let (a, b) = (range.primary.index.0, range.secondary.index.0);
+        assert_eq!(
+            (a.min(b), a.max(b)),
+            (0, "notes".len()),
+            "only the stem is selected"
+        );
+        let editor = ctx.read_response(editor_id()).expect("editor response");
+        assert!(
+            editor.rect.height() <= crate::app::ROW_HEIGHT + 0.5,
+            "the row does not grow: {}",
+            editor.rect.height()
+        );
+    }
+
+    #[test]
+    fn enter_commits_and_submits_platform_rename() {
+        let mut r = editing();
+        type_text(&mut r, "todo");
+        assert_eq!(
+            buffer(&r).as_deref(),
+            Some("todo.txt"),
+            "typing replaces the selected stem"
+        );
+        press(&mut r, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "todo.txt", false)]
+        );
+        assert!(r.harness.state().rename.is_none(), "the editor closed");
+        assert!(
+            r.fake.platform_actions().len() == 1 && r.fake.jobs().is_empty(),
+            "the index job waits for the disk result"
+        );
+    }
+
+    #[test]
+    fn tab_commits_too() {
+        let mut r = editing();
+        type_text(&mut r, "todo");
+        press(&mut r, Key::Tab);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "todo.txt", false)]
+        );
+    }
+
+    #[test]
+    fn esc_cancels_without_side_effects() {
+        let mut r = editing();
+        r.harness.state_mut().search.text = "abc".to_owned();
+        type_text(&mut r, "todo");
+        press(&mut r, Key::Escape);
+        assert!(r.harness.state().rename.is_none());
+        assert!(
+            r.fake.platform_actions().is_empty(),
+            "{:?}",
+            r.fake.platform_actions()
+        );
+        assert_eq!(r.fake.jobs().len(), 0, "{:?}", r.fake.jobs());
+        assert_eq!(
+            r.harness.state().search.text,
+            "abc",
+            "Escape did not reach the search box"
+        );
+        assert!(
+            r.harness.query_by_label("notes.txt").is_some(),
+            "the old name is back"
+        );
+    }
+
+    #[test]
+    fn focus_loss_commits() {
+        let mut r = editing();
+        type_text(&mut r, "todo");
+        let path_cell = r
+            .harness
+            .get_all_by_label("/home/me/docs")
+            .next()
+            .expect("a path cell");
+        path_cell.click();
+        r.harness.run_steps(4);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "todo.txt", false)]
+        );
+        assert!(r.harness.state().rename.is_none());
+    }
+
+    #[test]
+    fn unchanged_name_is_a_no_op() {
+        let mut r = editing();
+        press(&mut r, Key::Enter);
+        assert!(r.harness.state().rename.is_none());
+        assert_eq!(
+            r.fake.platform_actions().len(),
+            0,
+            "{:?}",
+            r.fake.platform_actions()
+        );
+
+        // Also via focus loss.
+        r.harness.key_press(Key::F2);
+        r.harness.run_steps(4);
+        assert!(r.harness.state().rename.is_some());
+        r.harness
+            .get_all_by_label("/home/me/docs")
+            .next()
+            .expect("path cell")
+            .click();
+        r.harness.run_steps(4);
+        assert!(r.harness.state().rename.is_none());
+        assert_eq!(
+            r.fake.platform_actions().len(),
+            0,
+            "{:?}",
+            r.fake.platform_actions()
+        );
+        assert_eq!(r.fake.jobs().len(), 0, "{:?}", r.fake.jobs());
+    }
+
+    #[test]
+    fn invalid_names_show_inline_errors() {
+        let mut r = editing();
+        for (text, message) in [
+            ("a/b", "A name can't contain \"/\""),
+            ("..", "\"..\" is not a valid name"),
+            ("", "The name can't be empty"),
+        ] {
+            replace_text(&mut r, text);
+            assert!(
+                r.harness.query_by_label(message).is_some(),
+                "{text:?} should show {message:?}"
+            );
+            press(&mut r, Key::Enter);
+            assert!(
+                r.harness.state().rename.is_some(),
+                "{text:?}: the editor stays open"
+            );
+            assert!(
+                r.fake.platform_actions().is_empty(),
+                "{text:?}: nothing submitted"
+            );
+        }
+        replace_text(&mut r, &"x".repeat(256));
+        assert!(
+            r.harness
+                .query_by_label_contains("The name is too long")
+                .is_some()
+        );
+        replace_text(&mut r, "fine.txt");
+        assert!(
+            r.harness.query_by_label_contains("can't").is_none()
+                && r.harness.query_by_label_contains("too long").is_none(),
+            "the error goes away once the name is valid"
+        );
+    }
+
+    #[test]
+    fn extension_change_needs_confirmation() {
+        let mut r = editing();
+        replace_text(&mut r, "notes.md");
+        press(&mut r, Key::Enter);
+        assert!(
+            r.fake.platform_actions().is_empty(),
+            "the first Enter only warns: {:?}",
+            r.fake.platform_actions()
+        );
+        assert!(r.harness.state().rename.is_some());
+        assert!(
+            r.harness
+                .query_by_label_contains("Change the extension from .txt to .md?")
+                .is_some()
+        );
+        press(&mut r, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "notes.md", false)]
+        );
+    }
+
+    #[test]
+    fn editing_after_a_warning_asks_again() {
+        let mut r = editing();
+        replace_text(&mut r, "notes.md");
+        press(&mut r, Key::Enter);
+        type_text(&mut r, "x");
+        press(&mut r, Key::Enter);
+        assert!(
+            r.fake.platform_actions().is_empty(),
+            "a changed text needs its own confirmation"
+        );
+        press(&mut r, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "notes.mdx", false)]
+        );
+    }
+
+    #[test]
+    fn focus_loss_does_not_confirm_a_warning() {
+        let mut r = editing();
+        replace_text(&mut r, " notes.txt");
+        r.harness
+            .get_all_by_label("/home/me/docs")
+            .next()
+            .expect("path cell")
+            .click();
+        r.harness.run_steps(4);
+        assert_eq!(
+            r.fake.platform_actions().len(),
+            0,
+            "{:?}",
+            r.fake.platform_actions()
+        );
+        assert!(
+            r.harness.state().rename.is_some(),
+            "the editor stays open and warns"
+        );
+    }
+
+    #[test]
+    fn undo_toast_renames_back() {
+        let mut r = editing();
+        type_text(&mut r, "todo");
+        press(&mut r, Key::Enter);
+        r.fake.send(BackendEvent::Renamed {
+            from: NOTES.into(),
+            new_name: "todo.txt".into(),
+            undo: false,
+            result: Ok("/home/me/docs/todo.txt".into()),
+        });
+        r.harness.run_steps(3);
+        assert!(r.harness.query_by_label("Renamed to todo.txt").is_some());
+        r.harness.get_by_label("Undo").click();
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.platform_actions().last(),
+            Some(&rename_action("/home/me/docs/todo.txt", "notes.txt", true))
+        );
+        r.fake.send(BackendEvent::Renamed {
+            from: "/home/me/docs/todo.txt".into(),
+            new_name: "notes.txt".into(),
+            undo: true,
+            result: Ok(NOTES.into()),
+        });
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.jobs().last(),
+            Some(&Job::Renamed {
+                from: "/home/me/docs/todo.txt".into(),
+                to: NOTES.into()
+            })
+        );
+        assert!(r.harness.query_by_label("Renamed back to notes.txt").is_some());
+    }
+
+    #[test]
+    fn typing_in_the_editor_does_not_trigger_global_shortcuts() {
+        let mut r = editing();
+        r.harness.state_mut().search.text = "abc".to_owned();
+        let cursor_before = r.harness.state().selection.cursor();
+        // F5 (quick rescan), Ctrl+P (preview), Ctrl+C / copy, arrows, Home/End, plain typing.
+        press(&mut r, Key::F5);
+        r.harness.key_press_modifiers(Modifiers::CTRL, Key::P);
+        r.harness.run_steps(2);
+        r.harness.event(egui::Event::Copy);
+        r.harness.run_steps(2);
+        press(&mut r, Key::ArrowDown);
+        press(&mut r, Key::Home);
+        type_text(&mut r, "z");
+        let app = r.harness.state();
+        assert!(r.fake.jobs().is_empty(), "F5 did not rescan: {:?}", r.fake.jobs());
+        assert!(!app.config.ui.preview_pane.enabled, "Ctrl+P did nothing");
+        assert!(app.toasts.is_empty(), "nothing was copied: {:?}", app.toasts);
+        assert_eq!(
+            app.selection.cursor(),
+            cursor_before,
+            "arrows stayed in the editor"
+        );
+        assert_eq!(app.search.text, "abc", "typing did not go to the search box");
+        assert_eq!(
+            buffer(&r).as_deref(),
+            Some("znotes.txt"),
+            "Home moved the caret, then `z` was typed"
+        );
+        assert!(
+            r.fake.platform_actions().is_empty(),
+            "Enter-like actions did not fire"
+        );
+
+        // Ctrl+Shift+R is the one global shortcut that still works.
+        r.harness
+            .key_press_modifiers(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
+        r.harness.run_steps(3);
+        assert_eq!(r.fake.jobs(), [Job::FullReindex]);
+        assert!(r.harness.state().rename.is_some(), "the editor is still open");
+    }
+
+    #[test]
+    fn rename_disabled_on_offline_volumes() {
+        let mut r = rig();
+        let mut snap = (*r.fixture.snapshot).clone();
+        snap.volumes[0].state = everythux_core::model::VolumeState::Offline;
+        r.fixture.snapshot = std::sync::Arc::new(snap);
+        r.show_default();
+        r.click_cell("notes.txt", Modifiers::NONE);
+        r.harness.key_press(Key::F2);
+        r.harness.run_steps(3);
+        assert!(r.harness.state().rename.is_none(), "F2 does nothing");
+        assert!(
+            r.harness
+                .state()
+                .toasts
+                .iter()
+                .any(|t| t.text.contains("offline")),
+            "with a hint: {:?}",
+            r.harness.state().toasts
+        );
+
+        // The context menu entry is there but greyed out.
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        let item = r.harness.get_by_label_contains("Rename…");
+        assert!(item.accesskit_node().is_disabled(), "the menu item is disabled");
+    }
+
+    #[test]
+    fn context_menu_rename_opens_the_editor() {
+        let mut r = rig();
+        r.show_default();
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        r.harness.get_by_label_contains("Rename…").click();
+        r.harness.run_steps(4);
+        let app = r.harness.state();
+        assert_eq!(
+            app.rename.as_ref().map(|e| e.path.clone()),
+            Some(PathBuf::from(NOTES))
+        );
+        assert_eq!(app.selection.rows().collect::<Vec<_>>(), [1]);
+    }
+
+    #[test]
+    fn f2_with_several_rows_selected_does_nothing() {
+        let mut r = rig();
+        r.show_default();
+        r.click_cell("report.pdf", Modifiers::NONE);
+        r.click_cell("notes.txt", Modifiers::SHIFT);
+        r.harness.key_press(Key::F2);
+        r.harness.run_steps(3);
+        assert!(r.harness.state().rename.is_none());
+    }
+
+    #[test]
+    fn editor_survives_unrelated_frames_and_new_results() {
+        let mut r = editing();
+        type_text(&mut r, "to");
+        // The same query is re-run against a newer snapshot with another order.
+        let f = &r.fixture;
+        let ids = [f.junk, f.notes, f.report];
+        r.show(&ids);
+        let edit = r.harness.state().rename.as_ref().expect("still editing");
+        assert_eq!(edit.row, 1, "the editor followed its entry");
+        assert_eq!(edit.buffer, "to.txt");
+    }
+}

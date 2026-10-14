@@ -125,6 +125,11 @@ pub(crate) enum ToastUndo {
         rule: everythux_core::exclusion::ExclusionRule,
         applied: bool,
     },
+    /// Rename the item at `current` back to `restore` (its previous name).
+    Rename {
+        current: std::path::PathBuf,
+        restore: std::ffi::OsString,
+    },
 }
 
 /// A transient message in the status bar.

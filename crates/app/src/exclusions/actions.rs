@@ -155,6 +155,7 @@ impl App {
                     self.toast(format!("Removed exclusion {}", rule.pattern), ToastKind::Info);
                 }
             }
+            ToastUndo::Rename { current, restore } => self.undo_rename(current, restore),
         }
     }
 

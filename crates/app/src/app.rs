@@ -9,6 +9,7 @@ mod commands;
 mod events;
 mod frame;
 mod interact;
+mod rename;
 mod search;
 mod settings;
 mod windows;
@@ -24,6 +25,7 @@ use everythux_core::snapshot::IndexSnapshot;
 pub(crate) use commands::Command;
 pub(crate) use frame::search_id;
 pub(crate) use interact::{CellEvent, ContextAction, CopyKind, Effect};
+pub(crate) use rename::CommitTrigger;
 pub(crate) use settings::valid_rules;
 
 use crate::backend::{Backend, BackendEvent};
@@ -32,6 +34,7 @@ use crate::keys::Bindings;
 use crate::model::ResultsView;
 use crate::preview::PreviewState;
 use crate::properties::PropertiesWindow;
+use crate::rename::RenameEdit;
 use crate::selection::Selection;
 use crate::status::{IndexStatus, Toast};
 use crate::ui::table::RowCache;
@@ -115,6 +118,15 @@ pub(crate) struct App {
     pub(crate) windows: Windows,
     pub(crate) preview: PreviewState,
 
+    /// The inline rename editor, if open.
+    pub(crate) rename: Option<RenameEdit>,
+    /// Path to select (and scroll to) once a snapshot containing it arrives.
+    pub(crate) pending_reselect: Option<rename::PendingReselect>,
+    /// Row selected by a plain click or key and when (`egui` time), for the slow-click rename.
+    pub(crate) selected_since: Option<(usize, f64)>,
+    /// A qualifying slow click waiting out the double-click interval: row and click time.
+    pub(crate) slow_click: Option<(usize, f64)>,
+
     /// `egui` time of the current frame, seconds.
     pub(crate) now: f64,
     /// Latest pointer position, used to place popups near the cursor.
@@ -169,6 +181,10 @@ impl App {
             toasts: Vec::new(),
             windows: Windows::default(),
             preview: PreviewState::default(),
+            rename: None,
+            pending_reselect: None,
+            selected_since: None,
+            slow_click: None,
             now: 0.0,
             pointer: None,
             quit_requested: false,

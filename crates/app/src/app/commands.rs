@@ -33,6 +33,8 @@ pub(crate) enum Command {
     Open,
     /// `Ctrl+Enter`.
     ShowInFolder,
+    /// `F2`: rename the selected entry inline.
+    Rename,
     Copy(CopyKind),
     Navigate(Nav, bool),
     ToggleColumn(ColumnId),
@@ -94,6 +96,7 @@ impl App {
                 let effects = self.show_selection_in_folder();
                 self.apply_effects(effects);
             }
+            Command::Rename => self.rename_selected(),
             Command::Copy(kind) => {
                 let effects = self.copy_selection(kind);
                 self.apply_effects(effects);

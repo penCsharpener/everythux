@@ -18,4 +18,4 @@ pub mod test_utils;
 pub use discovery::{DiscoveredVolume, MountInfoLine, discover_volumes, parse_mountinfo};
 pub use error::IndexError;
 pub use indexer::{IndexEvent, Indexer, IndexerSettings, Job, JobId, JobStats, Progress, ScanMode};
-pub use store::{ApplyStats, DirRef, Rebuild, Store, StoreStats, Update};
+pub use store::{ApplyStats, DirRef, Rebuild, RenameStats, Store, StoreStats, Update};

@@ -15,6 +15,9 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 | `Ctrl+P` | global | Show or hide the preview pane |
 | `Enter` | row | Open the file with its default application |
 | `Ctrl+Enter` | row | Open the containing folder |
+| `F2` | row | Rename the selected file or folder inline. The name without its extension is preselected |
+| `Enter` or `Tab` | rename editor | Commit the new name. A second `Enter` is needed after a warning (changed extension, leading or trailing space) |
+| `Esc` | rename editor | Cancel the rename |
 | `Ctrl+C` | row | Copy the full path |
 | `Ctrl+Shift+C` | row | Copy the folder path |
 | Arrow keys, `PageUp`, `PageDown`, `Home`, `End` | result list | Move the selection |
@@ -29,10 +32,17 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 | Double-click | Path cell | Open the containing folder in the file manager, with the file selected |
 | Double-click | Size or Modified cell | Open the folder's properties |
 | `Ctrl+Shift+Left-click` | Path cell | Add the path to the exclusions and open the exclusion popup |
-| Right-click | row | Context menu: open, open containing folder, copy path, copy name, properties, exclude, re-index this folder |
+| Right-click | row | Context menu: open, open containing folder, copy path, copy name, rename, properties, exclude, re-index this folder |
+| Click | selected Name cell | Rename inline, when `ui.rename_on_slow_click` is `true` (default `false`). Needs a click more than 0.5 s after the row was selected that is not part of a double-click |
 | `Shift+Click` | row | Extend the selection (a range). `Ctrl+Shift+Click` is taken by the exclusion action |
 
 ## Notes
+
+- **Renaming** works on one entry at a time, on online volumes only. Clicking elsewhere also commits
+  the name; an unchanged name does nothing. Names that are empty, `.`/`..`, contain `/` or are longer than
+  255 bytes are refused inline. An existing file is never overwritten. While the editor is open, typed keys
+  stay in it: `F5`, `Ctrl+C`, the arrow keys and the other global shortcuts are suspended, except
+  `Ctrl+Shift+R`. After a rename, the status bar offers **Undo** for 10 seconds.
 
 - **Folder properties** shows the properties of the containing folder for a file, and of the folder
   itself for a folder row. Set `ui.properties_target` to `"item"` to show the clicked item instead. If no file manager

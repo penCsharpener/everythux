@@ -11,6 +11,7 @@ use everythux_core::config::ColumnId;
 use everythux_index::{Job, ScanMode};
 
 use super::App;
+use super::rename::SLOW_CLICK_AFTER;
 use crate::backend::PlatformAction;
 use crate::model::PropTarget;
 use crate::status::ToastKind;
@@ -73,6 +74,7 @@ pub(crate) enum ContextAction {
     Properties,
     ExcludeFolder,
     Reindex(ScanMode),
+    Rename,
 }
 
 impl App {
@@ -87,6 +89,7 @@ impl App {
         match event {
             CellEvent::Click(mods) => self.on_cell_click(row, column, mods),
             CellEvent::DoubleClick(mods) => {
+                self.slow_click = None;
                 // A Ctrl+Shift double-click is two exclusion clicks, not an "open".
                 if column == ColumnId::Path
                     && self
@@ -124,12 +127,31 @@ impl App {
                 .into_iter()
                 .collect();
         }
+        self.slow_click = None;
         if mods.shift && !mods.ctrl && !mods.command {
             self.selection.select_range_to(row);
+            self.selected_since = None;
         } else if mods.ctrl || mods.command {
             self.selection.toggle(row);
+            self.selected_since = None;
         } else {
-            self.selection.select_only(row);
+            let already_selected = self.selection.len() == 1 && self.selection.contains(row);
+            let selected_long_ago = self
+                .selected_since
+                .is_some_and(|(r, at)| r == row && self.now - at > SLOW_CLICK_AFTER);
+            if column == ColumnId::Name
+                && already_selected
+                && selected_long_ago
+                && self.config.ui.rename_on_slow_click
+                && self.rename.is_none()
+            {
+                // Wait out the double-click interval first: a double-click opens the file.
+                self.slow_click = Some((row, self.now));
+                self.tick_slow_click();
+            } else if !already_selected {
+                self.selection.select_only(row);
+                self.selected_since = Some((row, self.now));
+            }
         }
         Vec::new()
     }
@@ -172,6 +194,11 @@ impl App {
                     .map(Effect::ShowProperties),
             ),
             ContextAction::ExcludeFolder => single(self.exclusion_target(row).map(Effect::ExcludeFolder)),
+            ContextAction::Rename => {
+                self.selection.select_only(row);
+                self.start_rename(row);
+                Vec::new()
+            }
             ContextAction::Reindex(mode) => single(
                 self.reindex_target(row)
                     .map(|path| Effect::Reindex { path, mode }),
@@ -275,6 +302,7 @@ impl App {
             (Some(c), Nav::PageDown) => (c + page).min(last),
         };
         self.selection.move_to(target, extend);
+        self.selected_since = Some((target, self.now));
         self.scroll_to_row = Some(target);
     }
 

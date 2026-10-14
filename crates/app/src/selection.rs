@@ -21,7 +21,6 @@ impl Selection {
     }
 
     /// Number of selected rows.
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.ranges.iter().map(ExactSizeIterator::len).sum()
     }

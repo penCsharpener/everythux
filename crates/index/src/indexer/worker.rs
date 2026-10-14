@@ -270,6 +270,7 @@ impl Worker {
             // Undo the transient "scanning" state shown while the job ran.
             self.announce_volumes(true);
         }
+        // Not throttled for a rename either: the user just acted and expects to see the new name.
         let user_initiated = !matches!(job, Job::RefreshDirs(_));
         match result {
             Ok(out) => {
@@ -318,7 +319,7 @@ fn execute(
         Job::RescanPath { path, mode } => jobs::rescan_path(ctx, store, tracker, path, *mode),
         Job::ApplyExclusions => jobs::apply_exclusions(ctx, store),
         Job::RefreshDirs(paths) => jobs::refresh_dirs(ctx, store, tracker, paths),
-        Job::Renamed { .. } => todo!("Phase D: Store::rename_path"),
+        Job::Renamed { from, to } => jobs::renamed(ctx, store, tracker, from, to),
     }
 }
 

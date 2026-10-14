@@ -4,6 +4,7 @@ mod exclusion_ui;
 mod icons;
 mod menus;
 mod preview_pane;
+mod rename_editor;
 mod search_bar;
 mod status_bar;
 pub(crate) mod table;
