@@ -16,6 +16,7 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
 - Phase B (text preview): UTF-8/16/32 and Windows-1252 detection, more extensions and known file
   names, "Show more" up to 8 MiB, a virtualised selectable text view with Wrap and line-number
   toggles, and `Ctrl+C` copying selected preview text. Syntax highlighting is still deferred.
+- Phase C (several search bars combined with AND, `SearchRequest.texts`).
 
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
@@ -176,7 +177,7 @@ CREATE TABLE dirs (
   parent_id   INTEGER REFERENCES dirs(id) ON DELETE CASCADE,
   path        BLOB NOT NULL,             -- absolute path as raw bytes (Linux paths are not UTF-8!)
   inode       INTEGER NOT NULL,
-  mtime_ns    INTEGER NOT NULL,          -- used for quick incremental rescans
+  mtime_ns    INTEGER NOT NULL,          -- used for quick incremental rescans (1 ns off when racy)
   total_size  INTEGER,                   -- recursive size, filled after scan (folder Size column)
   UNIQUE (volume_id, path)
 );
@@ -413,6 +414,8 @@ full rescan, and the rule survives restarts.
 - [x] **Quick rescan mode:** ext4 updates a directory's mtime whenever entries are added, removed or renamed.
       The quick mode re-lists only directories whose `mtime` changed since the last scan, so updating after a
       day away takes seconds. Full mode also catches size/mtime changes to files inside unchanged folders.
+      Folders whose mtime falls within 2 s before a walk starts are "racy" (a change in the same timestamp
+      tick keeps the mtime): they are stored with a validator 1 ns off, so the next quick scan re-lists them.
 - [x] Startup policy: `rescan_on_startup` is `none`, `quick` or `full`. `scheduled_rescan_minutes` sets periodic quick rescans.
 - [x] **Volumes panel:** lists all ext4 partitions (from udisks2 over D-Bus), with mounted/unmounted state,
       last scan, entry count, enable/disable toggle, and "Mount and index" for unmounted ones.

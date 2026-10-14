@@ -9,7 +9,7 @@ use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use everythux_core::config::ColumnId;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_search::synthetic::generate;
-use everythux_search::{QueryOptions, SearchIndex, Sort, parse};
+use everythux_search::{QueryOptions, SearchIndex, Sort, parse, parse_many};
 
 const ENTRIES: usize = 2_000_000;
 
@@ -94,6 +94,38 @@ fn search(c: &mut Criterion) {
     bench_query(c, "search/substring_sorted_path_2m", "report", opts, by_path, 0);
 }
 
+/// Several search bars against the same terms typed into one bar (budget: two or three bars add
+/// at most 10 % latency). Parsing is inside the loop for every variant, because the service
+/// parses each request, and bars parse once per bar.
+fn multi_bar(c: &mut Criterion) {
+    let index = &*INDEX;
+    let opts = QueryOptions::default();
+    let sort = Sort::default();
+    let cases: [(&str, &[&str]); 3] = [
+        ("one_bar", &["report ext:jpg;png dm:2020-01-01..2030-01-01"]),
+        ("two_bars", &["report", "ext:jpg;png dm:2020-01-01..2030-01-01"]),
+        (
+            "three_bars",
+            &["report", "ext:jpg;png", "dm:2020-01-01..2030-01-01"],
+        ),
+    ];
+    let mut group = c.benchmark_group("search/multi_bar_2m");
+    for (name, texts) in cases {
+        let query = parse_many(texts, opts).expect("benchmark bars parse");
+        let hits = index
+            .search(&query, sort, 0, &|| false)
+            .map_or(0, |ids| ids.len());
+        eprintln!("search/multi_bar_2m/{name}: {texts:?} -> {hits} results");
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                let query = parse_many(black_box(texts), opts).expect("benchmark bars parse");
+                black_box(index.search(&query, sort, 0, &|| false))
+            });
+        });
+    }
+    group.finish();
+}
+
 fn sorting(c: &mut Criterion) {
     let mut group = c.benchmark_group("sort");
     group.sample_size(10).warm_up_time(Duration::from_millis(500));
@@ -129,5 +161,5 @@ fn build(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, search, sorting, build);
+criterion_group!(benches, search, multi_bar, sorting, build);
 criterion_main!(benches);

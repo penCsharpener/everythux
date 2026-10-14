@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use everythux_search::{QueryOptions, SearchRequest, SearchResults, Sort};
 
 use super::App;
+use super::frame::bar_widget_id;
+use super::interact::Nav;
 use crate::model::ResultsView;
 use crate::selection::Selection;
 
@@ -14,11 +16,11 @@ use crate::selection::Selection;
 const MAX_REMAPPED_ROWS: usize = 256;
 
 impl App {
-    /// The request describing the search box and the current switches.
+    /// The request describing the search bars and the current switches.
     pub(crate) fn current_request(&self) -> SearchRequest {
         let sort = self.config.ui.sort;
         SearchRequest {
-            text: self.search.text.clone(),
+            texts: self.search.texts(),
             options: QueryOptions::from(&self.config.search),
             sort: Sort {
                 column: sort.column,
@@ -35,10 +37,90 @@ impl App {
         self.search.latest_generation = self.backend.search(request);
     }
 
-    /// Replaces the search text (used by Escape and tests) and searches.
+    /// Replaces the text of the first search bar and searches.
+    #[cfg(test)]
     pub(crate) fn set_search_text(&mut self, text: impl Into<String>) {
-        self.search.text = text.into();
+        self.search.first_mut().text = text.into();
         self.resubmit_search();
+    }
+
+    /// Replaces the text of bar `id` and searches; unknown ids are ignored.
+    pub(crate) fn set_bar_text(&mut self, id: u32, text: impl Into<String>) {
+        if let Some(bar) = self.search.bar_mut(id) {
+            bar.text = text.into();
+            self.resubmit_search();
+        }
+    }
+
+    /// `+` / `Ctrl+T`: appends an empty bar, focuses it and re-runs the search (an empty bar
+    /// changes nothing). Does nothing at the bar limit.
+    pub(crate) fn add_search_bar(&mut self) {
+        if let Some(id) = self.search.add() {
+            self.search.focus_bar = Some(id);
+            self.resubmit_search();
+        }
+    }
+
+    /// `×` / `Ctrl+W`: removes the extra bar `id`, focuses the bar above it and re-runs the
+    /// search. The first bar can't be closed.
+    pub(crate) fn close_search_bar(&mut self, id: u32) {
+        if let Some(above) = self.search.close(id) {
+            self.search.focus_bar = Some(above);
+            self.resubmit_search();
+        }
+    }
+
+    /// The search bar that has keyboard focus. With `recently`, also the bar that had it when the
+    /// frame began: egui drops the focus on Escape before any of our code sees the key.
+    pub(crate) fn focused_bar(&self, recently: bool) -> Option<u32> {
+        self.focused_bar_in(&self.ctx, recently)
+    }
+
+    /// Like [`Self::focused_bar`], against an explicit context (the frame's input handling).
+    pub(crate) fn focused_bar_in(&self, ctx: &egui::Context, recently: bool) -> Option<u32> {
+        ctx.memory(|m| {
+            self.search.bars.iter().map(|b| b.id).find(|&id| {
+                m.has_focus(bar_widget_id(id)) || (recently && m.had_focus_last_frame(bar_widget_id(id)))
+            })
+        })
+    }
+
+    /// `Tab`: from a search bar to the result list, from anywhere else to the newest bar.
+    pub(crate) fn switch_focus(&mut self) {
+        if self.focused_bar(false).is_some() {
+            self.focus_table();
+        } else {
+            self.search.focus_bar = Some(self.search.newest());
+        }
+    }
+
+    /// Gives the keyboard to the result list: no text field keeps the focus, so the table keys
+    /// (Home/End, copy, F2, …) apply. The selection is kept; without one the first row is selected.
+    fn focus_table(&mut self) {
+        self.search.focus_bar = None;
+        self.ctx.memory_mut(|m| {
+            if let Some(id) = m.focused() {
+                m.surrender_focus(id);
+            }
+        });
+        if self.selection.is_empty() {
+            self.navigate(Nav::Home, false);
+        }
+    }
+
+    /// Shows the combined query in the window title, sending a command only when it changed.
+    pub(crate) fn sync_window_title(&mut self) {
+        let query = self.search.combined_query();
+        let title = if query.is_empty() {
+            "Everythux".to_owned()
+        } else {
+            format!("{query} - Everythux")
+        };
+        if self.search.shown_title.as_deref() != Some(title.as_str()) {
+            self.ctx
+                .send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.search.shown_title = Some(title);
+        }
     }
 
     /// Folds search results into the state; results older than the latest submission are dropped.
@@ -51,7 +133,7 @@ impl App {
             );
             return;
         }
-        self.search.error = res.error;
+        self.search.set_error(res.error.map(|e| (e.bar, e.message)));
         let same_request = res.generation == self.search.results_generation;
         self.search.results_generation = res.generation;
         let view = ResultsView {
@@ -139,7 +221,7 @@ mod tests {
         t.app.set_search_text("report");
         let searches = t.fake.searches();
         assert_eq!(searches.len(), 1);
-        assert_eq!(searches[0].text, "report");
+        assert_eq!(searches[0].texts, ["report"]);
         assert!(!searches[0].options.regex);
         assert_eq!(searches[0].sort.column, ColumnId::Name);
         assert!(searches[0].sort.ascending);
@@ -188,7 +270,10 @@ mod tests {
             Some("unbalanced parenthesis"),
         );
         t.pump();
-        assert_eq!(t.app.search.error.as_deref(), Some("unbalanced parenthesis"));
+        assert_eq!(
+            t.app.search.first().error.as_deref(),
+            Some("unbalanced parenthesis")
+        );
         assert_eq!(t.app.results.as_ref().expect("results").len(), before);
         // The next good query clears the error.
         t.app.set_search_text("report");
@@ -196,7 +281,7 @@ mod tests {
         t.fake
             .send_results(generation, &t.fixture.snapshot, &[t.fixture.report], None);
         t.pump();
-        assert_eq!(t.app.search.error, None);
+        assert_eq!(t.app.search.first().error, None);
     }
 
     #[test]

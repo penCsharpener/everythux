@@ -13,7 +13,7 @@ use everythux_platform::PlatformError;
 use everythux_platform::file_manager::Method;
 use everythux_platform::mime::Category;
 use everythux_preview::{PreviewLimits, TextEncoding};
-use everythux_search::{SearchRequest, SearchResults};
+use everythux_search::{SearchError, SearchRequest, SearchResults};
 
 use super::{Backend, BackendEvent, Compute, PlatformAction};
 
@@ -158,7 +158,7 @@ impl FakeHandle {
         let _ = self.tx.send(event);
     }
 
-    /// Injects search results for `generation`.
+    /// Injects search results for `generation`; a parse `error` is attributed to the first bar.
     pub(crate) fn send_results(
         &self,
         generation: u64,
@@ -166,13 +166,28 @@ impl FakeHandle {
         ids: &[EntryId],
         error: Option<&str>,
     ) {
+        let error = error.map(|message| SearchError {
+            bar: 0,
+            message: message.to_owned(),
+        });
+        self.send_results_with(generation, snapshot, ids, error);
+    }
+
+    /// Injects search results for `generation` with an optional per-bar parse error.
+    pub(crate) fn send_results_with(
+        &self,
+        generation: u64,
+        snapshot: &Arc<IndexSnapshot>,
+        ids: &[EntryId],
+        error: Option<SearchError>,
+    ) {
         self.send(BackendEvent::Search(SearchResults {
             generation,
             ids: ids.into(),
             snapshot: Arc::clone(snapshot),
             total_entries: snapshot.len(),
             elapsed: Duration::from_millis(2),
-            error: error.map(str::to_owned),
+            error,
         }));
     }
 }

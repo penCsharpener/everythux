@@ -269,12 +269,19 @@ impl App {
                 "Copy full path / copy folder path",
             ),
             (d(b.quick_rescan), "global", "Quick rescan"),
-            (d(b.focus_search), "global", "Focus the search box"),
+            (d(b.focus_search), "global", "Focus the first search bar"),
+            (d(b.add_search_bar), "global", "Add a search bar (AND)"),
+            (d(b.close_search_bar), "search bar", "Close this extra search bar"),
+            (
+                format!("{0} / Shift+{0}", d(b.switch_focus)),
+                "global",
+                "Switch between the result list and the newest search bar",
+            ),
             (d(b.toggle_match_path), "global", "Match against the full path"),
             (
                 "Escape".to_owned(),
                 "global",
-                "Close the topmost popup, or clear the search",
+                "Close the topmost popup, or clear the focused search bar",
             ),
             ("Ctrl+Q".to_owned(), "global", "Quit"),
         ];

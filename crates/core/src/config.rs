@@ -299,6 +299,13 @@ pub struct Keybindings {
     pub focus_search: String,
     /// Toggle matching against the full path.
     pub toggle_match_path: String,
+    /// Add a search bar below the others (its query is combined with theirs by AND).
+    pub add_search_bar: String,
+    /// Close the focused extra search bar.
+    pub close_search_bar: String,
+    /// Move the keyboard focus between the result list and the newest search bar. With Shift
+    /// added it does the same in reverse.
+    pub switch_focus: String,
 }
 
 impl Default for Keybindings {
@@ -310,6 +317,9 @@ impl Default for Keybindings {
             toggle_preview: "Ctrl+P".to_owned(),
             focus_search: "Ctrl+F".to_owned(),
             toggle_match_path: "Ctrl+U".to_owned(),
+            add_search_bar: "Ctrl+T".to_owned(),
+            close_search_bar: "Ctrl+W".to_owned(),
+            switch_focus: "Tab".to_owned(),
         }
     }
 }

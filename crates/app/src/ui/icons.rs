@@ -1,5 +1,5 @@
-//! Tiny vector icons per file category, painted directly so no font glyphs or image assets are
-//! needed.
+//! Tiny vector icons per file category and for small icon buttons, painted directly so no font
+//! glyphs or image assets are needed.
 
 use egui::{Color32, Pos2, Rect, Shape, Stroke, Ui, Vec2, pos2, vec2};
 use everythux_platform::mime::Category;
@@ -33,6 +33,55 @@ pub(crate) fn icon(ui: &mut Ui, category: Category, dimmed: bool) {
         color = color.gamma_multiply(0.45);
     }
     paint(ui.painter(), rect, category, color);
+}
+
+/// A glyph for a small icon button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Glyph {
+    /// `+`: add something.
+    Plus,
+    /// `×`: close something.
+    Cross,
+}
+
+/// A square, frameless button showing a painted `glyph`, highlighted on hover like the other
+/// small toggles. `label` is its accessible name; disabled buttons are greyed out and never
+/// report clicks.
+pub(crate) fn glyph_button(ui: &mut Ui, glyph: Glyph, label: &str, enabled: bool) -> egui::Response {
+    let side = ui.spacing().interact_size.y;
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(side), sense);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    if !ui.is_rect_visible(rect) {
+        return response;
+    }
+    let visuals = ui.style().interact(&response);
+    let color = if enabled {
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect.shrink(1.0), visuals.corner_radius, visuals.weak_bg_fill);
+        }
+        visuals.fg_stroke.color
+    } else {
+        ui.visuals().weak_text_color().gamma_multiply(0.6)
+    };
+    let stroke = Stroke::new(1.5, color);
+    let r = Rect::from_center_size(rect.center(), Vec2::splat(side * 0.4));
+    let lines = match glyph {
+        Glyph::Plus => [
+            [pos2(r.center().x, r.top()), pos2(r.center().x, r.bottom())],
+            [pos2(r.left(), r.center().y), pos2(r.right(), r.center().y)],
+        ],
+        Glyph::Cross => [[r.left_top(), r.right_bottom()], [r.right_top(), r.left_bottom()]],
+    };
+    for line in lines {
+        ui.painter().line_segment(line, stroke);
+    }
+    response
 }
 
 fn paint(painter: &egui::Painter, rect: Rect, category: Category, color: Color32) {

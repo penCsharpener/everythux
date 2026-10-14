@@ -141,6 +141,9 @@ pub(crate) struct Bindings {
     pub(crate) toggle_preview: KeyboardShortcut,
     pub(crate) focus_search: KeyboardShortcut,
     pub(crate) toggle_match_path: KeyboardShortcut,
+    pub(crate) add_search_bar: KeyboardShortcut,
+    pub(crate) close_search_bar: KeyboardShortcut,
+    pub(crate) switch_focus: KeyboardShortcut,
     pub(crate) exclude_click: ClickBinding,
     /// One message per binding that was invalid and replaced by its default.
     pub(crate) warnings: Vec<String>,
@@ -168,6 +171,13 @@ impl Bindings {
             &config.toggle_match_path,
             &defaults.toggle_match_path,
         );
+        let add_search_bar = key("add_search_bar", &config.add_search_bar, &defaults.add_search_bar);
+        let close_search_bar = key(
+            "close_search_bar",
+            &config.close_search_bar,
+            &defaults.close_search_bar,
+        );
+        let switch_focus = key("switch_focus", &config.switch_focus, &defaults.switch_focus);
         let exclude_click = parse_click(&config.exclude_path_click).unwrap_or_else(|e| {
             warnings.push(format!(
                 "Invalid keybinding exclude_path_click = {:?}: {e}; using {}",
@@ -184,6 +194,9 @@ impl Bindings {
             toggle_preview,
             focus_search,
             toggle_match_path,
+            add_search_bar,
+            close_search_bar,
+            switch_focus,
             exclude_click,
             warnings,
         }
@@ -274,6 +287,27 @@ mod tests {
     fn defaults_parse_without_warnings() {
         let bindings = Bindings::from_config(&Keybindings::default());
         assert!(bindings.warnings.is_empty(), "{:?}", bindings.warnings);
+    }
+
+    #[test]
+    fn search_bar_bindings_default_when_missing_from_an_old_config() {
+        let json = r#"{"keybindings": {"reindex_all": "Ctrl+Shift+R"}}"#;
+        let config = everythux_core::config::Config::from_json(json, std::path::Path::new("c.json"))
+            .expect("an old config loads");
+        let bindings = Bindings::from_config(&config.keybindings);
+        assert!(bindings.warnings.is_empty(), "{:?}", bindings.warnings);
+        assert_eq!(
+            bindings.add_search_bar,
+            KeyboardShortcut::new(Modifiers::CTRL, Key::T)
+        );
+        assert_eq!(
+            bindings.close_search_bar,
+            KeyboardShortcut::new(Modifiers::CTRL, Key::W)
+        );
+        assert_eq!(
+            bindings.switch_focus,
+            KeyboardShortcut::new(Modifiers::NONE, Key::Tab)
+        );
     }
 
     #[test]

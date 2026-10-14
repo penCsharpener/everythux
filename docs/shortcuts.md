@@ -8,7 +8,11 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 | Input | Context | Action |
 |-------|---------|--------|
 | Typing | anywhere | Search. The search box is focused on start |
-| `Ctrl+F` | global | Focus the search box |
+| `Ctrl+F` | global | Focus the first search bar |
+| `Ctrl+T` | global | Add a search bar below the others and focus it. Its query is combined with AND (at most 8 bars) |
+| `Ctrl+W` | extra search bar | Close the focused search bar and focus the one above. Does nothing in the first bar |
+| `Tab` / `Shift+Tab` | global | From the result list (or with nothing focused): focus the newest, bottom-most search bar. From any search bar: focus the result list, keeping the selection (or selecting the first row). `Tab` never walks through the table cells |
+| `Esc` | search bar | Clear the focused search bar (the first bar when no bar has the focus) |
 | `Ctrl+Shift+R` | global | Full reindex of all volumes (background, cancellable). Works while the search box has focus |
 | `F5` | global | Quick rescan |
 | `Ctrl+U` | global | Match against the full path instead of the name |
@@ -28,6 +32,8 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 
 | Input | Context | Action |
 |-------|---------|--------|
+| Click `+` | first search bar | Add a search bar (AND). Disabled once there are 8 bars |
+| Click `×` | extra search bar | Close that search bar |
 | Click on a column header | header | Sort by that column. Click again to reverse |
 | Drag a header edge | header | Resize the column |
 | Drag the preview pane edge | preview pane | Resize the pane. Only when View → Preview pane → **Allow resizing by dragging** is on; otherwise the width is fixed and set in the same menu |
@@ -52,6 +58,9 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
   255 bytes are refused inline. An existing file is never overwritten. While the editor is open, typed keys
   stay in it: `F5`, `Ctrl+C`, the arrow keys and the other global shortcuts are suspended, except
   `Ctrl+Shift+R`. After a rename, the status bar offers **Undo** for 10 seconds.
+  `Tab` in the editor commits the name; it doesn't move the focus to a search bar.
+- **Several search bars** are combined with AND; see [search-syntax.md](search-syntax.md#several-search-bars).
+  The arrow keys, `PageUp`, `PageDown`, `Enter` and `F2` work from any search bar as they do from the first.
 
 - **Folder properties** shows the properties of the containing folder for a file, and of the folder
   itself for a folder row. Set `ui.properties_target` to `"item"` to show the clicked item instead. If no file manager

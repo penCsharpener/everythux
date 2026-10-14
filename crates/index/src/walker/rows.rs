@@ -72,6 +72,9 @@ pub struct DirListing {
     pub inode: u64,
     /// Folder mtime (ns), read *before* listing so a concurrent change is seen as newer next time.
     pub mtime_ns: i64,
+    /// The folder's mtime was so recent when the walk started that a later change may keep the
+    /// same timestamp (filesystem clocks tick coarsely). See [`DirListing::validator_mtime_ns`].
+    pub racy: bool,
     /// The entries, in inode order.
     pub entries: Vec<EntryRow>,
     text: Vec<u8>,
@@ -94,8 +97,23 @@ impl DirListing {
             path,
             inode,
             mtime_ns,
+            racy: false,
             entries: Vec::with_capacity(capacity),
             text: Vec::with_capacity(capacity * 24),
+        }
+    }
+
+    /// The mtime stored as the folder's quick-scan validator (`dirs.mtime_ns`).
+    ///
+    /// For a racy listing this is one nanosecond off the real mtime, so the next quick scan sees a
+    /// mismatch and re-lists the folder, the way git "smudges" racily clean index entries. The
+    /// offset is invisible at any display precision, and the folder's entry row keeps the exact
+    /// value.
+    pub fn validator_mtime_ns(&self) -> i64 {
+        if self.racy {
+            self.mtime_ns.wrapping_sub(1)
+        } else {
+            self.mtime_ns
         }
     }
 

@@ -57,8 +57,11 @@ falls back to its default, with a warning in the log.
 | `quick_rescan` | `"F5"` | Quick rescan |
 | `exclude_path_click` | `"Ctrl+Shift+LeftClick"` | Click on a Path cell that adds the path to the exclusions |
 | `toggle_preview` | `"Ctrl+P"` | Show or hide the preview pane |
-| `focus_search` | `"Ctrl+F"` | Focus the search box |
+| `focus_search` | `"Ctrl+F"` | Focus the first search bar |
 | `toggle_match_path` | `"Ctrl+U"` | Match against the full path |
+| `add_search_bar` | `"Ctrl+T"` | Add a search bar below the others; its query is combined with AND |
+| `close_search_bar` | `"Ctrl+W"` | Close the focused extra search bar (the first bar can't be closed) |
+| `switch_focus` | `"Tab"` | Move the focus between the result list and the newest search bar. The same key with `Shift` added does the same |
 
 ## `indexer`
 

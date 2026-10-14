@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result, bail};
 use everythux_core::ids::EntryId;
 use everythux_core::snapshot::IndexSnapshot;
-use everythux_search::{QueryOptions, SearchIndex, Sort, parse};
+use everythux_search::{QueryOptions, SearchIndex, Sort, parse_many};
 
 use crate::cli::SearchArgs;
 use crate::context::Env;
@@ -22,7 +22,10 @@ pub(crate) fn run(env: &Env, args: &SearchArgs) -> Result<()> {
         match_path: args.match_path,
         regex: args.regex,
     };
-    let query = parse(&query_text, options).with_context(|| format!("invalid query {query_text:?}"))?;
+    // One search bar: the same parsing path as the app, which passes one text per bar.
+    let query = parse_many(&[&query_text], options)
+        .map_err(|e| e.error)
+        .with_context(|| format!("invalid query {query_text:?}"))?;
 
     let snapshot = Arc::new(store.load_snapshot().context("cannot load the index")?);
     let index = SearchIndex::build(Arc::clone(&snapshot));

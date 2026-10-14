@@ -25,7 +25,7 @@ fn snapshot(extra: &[&str]) -> Arc<IndexSnapshot> {
 
 fn request(text: &str) -> SearchRequest {
     SearchRequest {
-        text: text.to_owned(),
+        texts: vec![text.to_owned()],
         options: QueryOptions::default(),
         sort: Sort::default(),
         limit: 0,
@@ -89,7 +89,9 @@ fn parse_errors_keep_the_previous_ids() {
     let r = recv(&rx);
     assert_eq!(r.generation, first_error);
     assert!(
-        r.error.as_deref().is_some_and(|e| e.contains("quote")),
+        r.error
+            .as_ref()
+            .is_some_and(|e| e.bar == 0 && e.message.contains("quote")),
         "{:?}",
         r.error
     );
@@ -173,4 +175,27 @@ fn dropping_the_service_closes_the_channel() {
     // The worker has been joined, so its sender is gone and the iterator terminates.
     assert!(rx.iter().count() <= 2);
     assert!(rx.recv().is_err());
+}
+
+#[test]
+fn several_bars_combine_with_and_and_report_the_failing_bar() {
+    let (service, rx) = SearchService::start(snapshot(&[]));
+    let mut req = request("alpha");
+    req.texts.push(String::new());
+    req.texts.push("txt".to_owned());
+    service.submit(req.clone());
+    let good = recv(&rx);
+    assert_eq!(names(&good), ["alpha.txt"]);
+
+    req.texts[1] = "\"open".to_owned();
+    service.submit(req);
+    let r = recv(&rx);
+    let error = r.error.expect("a parse error");
+    assert_eq!(error.bar, 1, "the broken middle bar is named");
+    assert_eq!(r.ids, good.ids, "previous results stay");
+
+    let mut none = request("");
+    none.texts.clear();
+    service.submit(none);
+    assert_eq!(recv(&rx).ids.len(), 4, "no bars match everything");
 }

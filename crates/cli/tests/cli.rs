@@ -275,6 +275,14 @@ fn reindex_then_search_end_to_end() {
     assert!(case.trim().is_empty(), "--case is case-sensitive: {case}");
     assert!(sb.ok(&["search", "NOTES"]).contains("Notes.TXT"));
 
+    let broken = sb.run(&["search", "\"open"]);
+    assert!(!broken.status.success());
+    let message = stderr(&broken);
+    assert!(
+        message.contains("invalid query") && message.contains("unterminated quote"),
+        "{message}"
+    );
+
     let stats = sb.ok(&["stats"]);
     assert!(stats.contains("Entries:"), "{stats}");
 }
