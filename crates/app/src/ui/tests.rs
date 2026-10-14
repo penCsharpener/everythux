@@ -3,6 +3,7 @@
 
 use egui::{Key, Modifiers, Vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::NodeT as _;
 use egui_kittest::kittest::Queryable as _;
 use everythux_core::config::{ColumnId, Config};
 use everythux_index::{IndexEvent, Job, JobId};
@@ -924,6 +925,43 @@ fn ctrl_c_copies_the_selected_preview_text_not_the_path() {
 }
 
 #[test]
+fn right_click_menu_selects_all_and_copies_the_preview_text() {
+    let mut r = text_rig(everythux_preview::PreviewContent::text(
+        "first line\nsecond line\n",
+    ));
+    r.harness.get_by_label("first line").click_secondary();
+    r.harness.run_steps(4);
+    r.harness.get_by_label("Select all").click();
+    r.harness.run_steps(3);
+    assert!(r.harness.state().preview_text_selected());
+    r.harness.get_by_label("first line").click_secondary();
+    r.harness.run_steps(4);
+    // The toolbar has a "Copy" button too; the menu entry is the one drawn last.
+    r.harness
+        .query_all_by_label("Copy")
+        .last()
+        .expect("menu entry")
+        .click();
+    assert_eq!(copied_next_frame(&mut r), ["first line\nsecond line\n"]);
+}
+
+#[test]
+fn toolbar_copy_button_copies_the_selection() {
+    let mut r = text_rig(everythux_preview::PreviewContent::text(
+        "first line\nsecond line\n",
+    ));
+    assert!(
+        r.harness.get_by_label("Copy").accesskit_node().is_disabled(),
+        "nothing selected yet"
+    );
+    r.harness.get_by_label("first line").click();
+    r.harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    r.harness.run_steps(2);
+    r.harness.get_by_label("Copy").click();
+    assert_eq!(copied_next_frame(&mut r), ["first line\nsecond line\n"]);
+}
+
+#[test]
 fn ctrl_c_with_the_table_focused_still_copies_the_path() {
     let mut r = text_rig(everythux_preview::PreviewContent::text(
         "first line\nsecond line\n",
@@ -1124,8 +1162,6 @@ fn text_preview_timing() {
 
 mod rename {
     use std::path::PathBuf;
-
-    use egui_kittest::kittest::NodeT as _;
 
     use super::*;
     use crate::ui::rename_editor::editor_id;
@@ -1687,7 +1723,6 @@ mod rename {
 }
 
 mod search_bars {
-    use egui_kittest::kittest::NodeT as _;
     use everythux_search::{QueryOptions, SearchError, SearchIndex, Sort, parse_many};
 
     use super::*;

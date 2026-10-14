@@ -25,6 +25,8 @@ pub(crate) enum Command {
     CustomPreviewWidth,
     /// View → Preview pane → Allow resizing by dragging.
     TogglePreviewResizable,
+    /// View → Columns → Lock column widths.
+    ToggleLockColumnWidths,
     FocusSearch,
     ToggleMatchPath,
     ToggleCaseSensitive,
@@ -94,6 +96,7 @@ impl App {
                 self.open_popup(PopupId::PreviewWidth);
             }
             Command::TogglePreviewResizable => self.toggle_preview_resizable(),
+            Command::ToggleLockColumnWidths => self.toggle_lock_column_widths(),
             Command::FocusSearch => self.search.focus_bar = Some(FIRST_BAR),
             Command::ToggleMatchPath => self.toggle_match_path(),
             Command::ToggleCaseSensitive => self.toggle_case_sensitive(),

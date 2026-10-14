@@ -19,7 +19,10 @@ Written in Rust, focused on ext4, backed by SQLite.
 - `Ctrl+Shift+R` rebuilds the index. `F5` runs a quick rescan. You can also re-index a single volume or folder.
 - `Ctrl+Shift+Click` on a path excludes it and opens a popup to refine the rule. Exclusions support globs,
   regexes and scopes (`node_modules`, `bin` under `/home/*`, …).
-- Optional preview pane (`Ctrl+P`) for images, text, PDFs, audio and video.
+- Optional preview pane (`Ctrl+P`) for images, text, PDFs, audio and video. Text can be selected and copied
+  (`Ctrl+C`, the Copy button or the right-click menu).
+- Window resizes only change the **Path** column; the other columns keep their saved width.
+  View → Columns → Lock column widths also disables dragging the header borders.
 - Configuration is a JSON file (`~/.config/everythux/config.json`).
 
 **Status:** v0.1 to v0.4 of the [roadmap](ROADMAP.md) are implemented. See its status section for what's

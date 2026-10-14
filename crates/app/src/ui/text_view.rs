@@ -109,6 +109,8 @@ impl App {
             return;
         };
         let mut actions = Actions::default();
+        // Presses anywhere in the pane (the toolbar buttons) keep the selection.
+        let pane = ui.max_rect();
 
         ui.add(Label::new(RichText::new(summary(doc, size_format)).weak()).truncate());
         ui.horizontal(|ui| {
@@ -117,6 +119,13 @@ impl App {
                 .on_hover_text("Wrap long lines at the pane width");
             actions.toggle_wrap = wrap_button.clicked();
             actions.toggle_line_numbers = ui.add(Button::selectable(line_numbers, "Line numbers")).clicked();
+            let copy = ui
+                .add_enabled(doc.selection().is_some(), Button::new("Copy"))
+                .on_hover_text("Copy the selected text (Ctrl+C)")
+                .on_disabled_hover_text("Select text in the preview to copy it");
+            if copy.clicked() {
+                actions.copy = doc.selected_text().map(str::to_owned);
+            }
         });
 
         let has_footer = doc.end_offset < doc.total_bytes;
@@ -136,7 +145,7 @@ impl App {
             .auto_shrink([false, false])
             .max_height(max_height)
             .show_viewport(ui, |ui, viewport| {
-                text_body(ui, viewport, doc, wrap, line_numbers, &mut actions);
+                text_body(ui, viewport, pane, doc, wrap, line_numbers, &mut actions);
             });
 
         if has_footer {
@@ -185,6 +194,7 @@ impl App {
 fn text_body(
     ui: &mut Ui,
     viewport: Rect,
+    pane: Rect,
     doc: &mut TextDoc,
     wrap: bool,
     line_numbers: bool,
@@ -225,15 +235,33 @@ fn text_body(
     };
 
     let response = ui.interact(content, text_view_id(), Sense::click_and_drag());
-    handle_pointer(ui, &response, doc, &layout);
+    handle_pointer(ui, &response, pane, doc, &layout);
     handle_keys(ui, &response, doc, actions);
+    response.context_menu(|ui| context_menu(ui, doc, actions));
 
     let first = ((viewport.min.y / row_height).floor().max(0.0) as usize).min(rows);
     let last = ((viewport.max.y / row_height).ceil() as usize + 1).min(rows);
     paint_rows(ui, doc, &layout, content_width, first..last, line_numbers);
 }
 
-fn handle_pointer(ui: &Ui, response: &egui::Response, doc: &mut TextDoc, layout: &Layout) {
+/// Right-click menu of the text: copy the selection, or select everything.
+fn context_menu(ui: &mut Ui, doc: &mut TextDoc, actions: &mut Actions) {
+    let has_selection = doc.selection().is_some();
+    if ui
+        .add_enabled(has_selection, Button::new("Copy"))
+        .on_disabled_hover_text("Select text first")
+        .clicked()
+    {
+        actions.copy = doc.selected_text().map(str::to_owned);
+        ui.close();
+    }
+    if ui.button("Select all").clicked() {
+        doc.select_all();
+        ui.close();
+    }
+}
+
+fn handle_pointer(ui: &Ui, response: &egui::Response, pane: Rect, doc: &mut TextDoc, layout: &Layout) {
     let (pressed, shift, press_origin) = ui.input(|i| {
         (
             i.pointer.primary_pressed(),
@@ -243,9 +271,11 @@ fn handle_pointer(ui: &Ui, response: &egui::Response, doc: &mut TextDoc, layout:
     });
     let visible = ui.clip_rect().intersect(response.rect);
     if pressed && press_origin.is_some_and(|p| !visible.contains(p)) {
-        // Clicking anywhere else (the result list, the search box) ends the selection, so
-        // Ctrl+C goes back to copying paths.
-        doc.clear_selection();
+        // Clicking outside the pane (the result list, the search box) ends the selection, so
+        // Ctrl+C goes back to copying paths. The pane's own buttons keep it.
+        if press_origin.is_some_and(|p| !pane.contains(p)) {
+            doc.clear_selection();
+        }
         return;
     }
     let Some(pos) = response.interact_pointer_pos() else {
