@@ -1,7 +1,9 @@
 # Reference copy: this section is already in crates/app/Cargo.toml.
 #
-# Build with:  cargo build --release --locked -p everythux-app -p everythux-cli
-#              cargo deb -p everythux-app --no-build
+# Use ./build-release.sh in the repository root: it builds with the stripped `dist` profile and runs
+#   cargo build --profile dist --locked -p everythux-app -p everythux-cli
+#   cargo deb -p everythux-app --profile dist --no-build --compress-type xz
+# (cargo-deb rewrites the target/release/ asset paths below to target/dist/ for --profile dist.)
 #
 # Asset sources that are not under target/ are relative to this crate (crates/app), hence ../../.
 # everythux-cli belongs to another package, so the workspace must be built before packaging.

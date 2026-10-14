@@ -41,6 +41,24 @@ everythux-cli search '*.pdf' 'dm:thisyear' --sort size --desc --limit 20
 everythux-cli exclude add node_modules --kind dir
 ```
 
+### Release build
+
+`./build-release.sh` builds the binaries with the `dist` Cargo profile (release, no debug info, stripped)
+and writes a tarball, a `.deb` (xz-compressed) and `SHA256SUMS` to `dist/`. The artefact names match the
+CI release workflow. The `.deb` is about 7 MB (about 25 MB installed) instead of 25 MB / 124 MB with the
+plain release profile.
+
+```sh
+./build-release.sh                           # fmt + clippy, build, tarball, .deb, SHA256SUMS in dist/
+./build-release.sh --skip-checks --out /tmp/out
+./build-release.sh --no-deb --no-tarball     # just the stripped binaries in target/dist/
+```
+
+Options: `--out DIR` (default `dist/`), `--target TRIPLE` (default: host), `--no-deb`, `--no-tarball`,
+`--skip-checks` (skip `cargo fmt --check` and clippy), `--test` (also run the tests),
+`--install-tools` (run `cargo install cargo-deb --locked` if cargo-deb is missing; otherwise the script
+prints that command and exits), `--help`.
+
 ## Documentation
 
 - [Search syntax](docs/search-syntax.md)
