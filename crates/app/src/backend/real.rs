@@ -39,6 +39,8 @@ pub(crate) struct RealBackend {
     /// `None` only while dropping; closing it stops the indexer host thread.
     indexer_tx: Option<Sender<IndexerCmd>>,
     indexer_host: Option<std::thread::JoinHandle<()>>,
+    /// The app's config and log folders, which the indexer's live-update watcher must ignore.
+    watch_ignore: Vec<PathBuf>,
     search: SearchService,
     preview: Mutex<Option<PreviewHandle>>,
     events: Sender<BackendEvent>,
@@ -55,9 +57,17 @@ impl RealBackend {
     pub(crate) fn start(
         ctx: &egui::Context,
         paths: &AppPaths,
-        settings: IndexerSettings,
+        mut settings: IndexerSettings,
     ) -> (Self, Receiver<BackendEvent>) {
         let (events, rx) = crossbeam_channel::unbounded();
+        let watch_ignore: Vec<PathBuf> = [
+            paths.config_file.parent().map(std::path::Path::to_path_buf),
+            Some(paths.log_dir.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        settings.watch_ignore.clone_from(&watch_ignore);
 
         // `Indexer::start` opens and integrity-checks the database, which takes seconds on large
         // indexes, so it runs on a host thread that then owns the indexer. Commands queue up in
@@ -120,6 +130,7 @@ impl RealBackend {
             Self {
                 indexer_tx: Some(indexer_tx),
                 indexer_host,
+                watch_ignore,
                 search,
                 preview: Mutex::new(None),
                 events,
@@ -200,6 +211,8 @@ impl Backend for RealBackend {
     }
 
     fn update_settings(&self, settings: IndexerSettings) {
+        let mut settings = settings;
+        settings.watch_ignore.clone_from(&self.watch_ignore);
         self.send_indexer(IndexerCmd::Settings(settings));
     }
 

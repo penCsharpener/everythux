@@ -220,13 +220,15 @@ impl Worker {
         }
         let shared = Arc::clone(&self.shared);
         let mut config = WatchConfig::new(roots, self.exclusions.clone());
-        // Never watch the index's own folder: its writes would feed back as change events.
+        // Never watch the index's own folder or the app's config/log folders: their writes would
+        // feed back as change events.
         config.ignore = self
             .store
             .path()
             .parent()
             .map(std::path::Path::to_path_buf)
             .into_iter()
+            .chain(self.settings.watch_ignore.iter().cloned())
             .collect();
         match Watcher::start(
             config,

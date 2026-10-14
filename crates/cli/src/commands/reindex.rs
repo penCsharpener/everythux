@@ -27,6 +27,7 @@ pub(crate) fn run(env: &Env, args: &ReindexArgs) -> Result<()> {
         volumes: config.volumes,
         exclusions: config.exclusions,
         indexer,
+        watch_ignore: Vec::new(),
     };
 
     let (handle, events) = Indexer::start(&env.db, settings)

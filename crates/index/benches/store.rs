@@ -28,6 +28,7 @@ fn settings(root: &std::path::Path) -> IndexerSettings {
             include: vec![root.to_path_buf()],
             disabled_uuids: vec![],
         },
+        watch_ignore: Vec::new(),
         exclusions: vec![],
         indexer: IndexerConfig {
             rescan_on_startup: StartupRescan::None,

@@ -147,6 +147,10 @@ pub struct IndexerSettings {
     pub exclusions: Vec<ExclusionRule>,
     /// Behaviour.
     pub indexer: IndexerConfig,
+    /// Folders the live-update watcher must never watch, in addition to the database folder:
+    /// the app's own config and log folders, whose writes would otherwise come back as change
+    /// events and trigger rescans (and fresh snapshots) every time a setting is saved.
+    pub watch_ignore: Vec<PathBuf>,
 }
 
 /// Handle to the background indexer thread. Dropping it shuts the thread down.

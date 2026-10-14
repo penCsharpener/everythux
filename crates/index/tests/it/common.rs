@@ -24,6 +24,7 @@ pub(crate) fn settings(roots: &[&Path]) -> IndexerSettings {
             include: roots.iter().map(|p| p.to_path_buf()).collect(),
             disabled_uuids: vec![],
         },
+        watch_ignore: Vec::new(),
         exclusions: vec![],
         indexer: IndexerConfig {
             threads: 4,

@@ -28,6 +28,7 @@ impl App {
         IndexerSettings {
             volumes: self.config.volumes.clone(),
             exclusions: valid_rules(&self.config.exclusions),
+            watch_ignore: Vec::new(),
             indexer: self.config.indexer.clone(),
         }
     }

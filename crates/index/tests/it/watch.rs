@@ -103,3 +103,46 @@ fn dropping_the_indexer_does_not_wait_for_filesystem_events() {
         started.elapsed()
     );
 }
+
+#[test]
+fn the_apps_own_config_and_log_folders_are_not_watched() {
+    // Saving a setting rewrites config.json (temp file + rename). If that folder were watched,
+    // every save would trigger a rescan and a fresh snapshot, which used to drop the UI selection.
+    let (db, tree) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let tb = TreeBuilder::new(tree.path());
+    tb.dir(".config/everythux")
+        .unwrap()
+        .dir(".local/state/everythux")
+        .unwrap()
+        .dir("src")
+        .unwrap();
+    let mut s = watching_settings(tree.path());
+    s.watch_ignore = vec![
+        tree.path().join(".config/everythux"),
+        tree.path().join(".local/state/everythux"),
+    ];
+    let (indexer, rx) = start_scanned(db.path(), s);
+    let root = tree.path().to_path_buf();
+
+    tb.file(".config/everythux/.config.json.tmp", 2).unwrap();
+    std::fs::rename(
+        tree.path().join(".config/everythux/.config.json.tmp"),
+        tree.path().join(".config/everythux/config.json"),
+    )
+    .unwrap();
+    tb.file(".local/state/everythux/everythux.log", 3).unwrap();
+    tb.file("src/seen.rs", 1).unwrap();
+    wait_snapshot(&rx, "src file", |s| listing(s, &root).contains_key("src/seen.rs"));
+    // Give a (wrongly) watched folder time to be refreshed, then check it was not.
+    std::thread::sleep(Duration::from_millis(600));
+    let snap = indexer.snapshot();
+    let rows = listing(&snap, &root);
+    assert!(
+        !rows.contains_key(".config/everythux/config.json"),
+        "config folder was watched"
+    );
+    assert!(
+        !rows.contains_key(".local/state/everythux/everythux.log"),
+        "log folder was watched"
+    );
+}

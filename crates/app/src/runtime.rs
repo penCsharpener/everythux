@@ -109,6 +109,7 @@ pub fn run() -> anyhow::Result<()> {
             let settings = everythux_index::IndexerSettings {
                 volumes: config.volumes.clone(),
                 exclusions: valid_rules(&config.exclusions),
+                watch_ignore: Vec::new(),
                 indexer: config.indexer.clone(),
             };
             let (backend, events) = RealBackend::start(&cc.egui_ctx, &paths, settings);
