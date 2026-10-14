@@ -48,6 +48,8 @@ Load the matching skill before doing the work it covers:
 - `.claude/skills/rust-performance`: measuring, allocation, data layout, parallelism, SQLite and egui budgets.
 - `.claude/skills/rust-testing`: unit/integration/property/snapshot/UI tests and benchmarks.
 - `.claude/skills/rust-verify`: the pre-commit gate and the workspace lint configuration.
+- `.claude/skills/version-bump`: after each fix or feature, bump the workspace version (feature = minor,
+  fix = build number), update `ROADMAP.md`, and commit it.
 
 ## Project rules
 
