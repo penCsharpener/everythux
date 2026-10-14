@@ -7,7 +7,10 @@ Written in Rust, focused on ext4, backed by SQLite.
   keeps the index fresh with quick rescans and inotify.
 - Results update as you type: an in-memory engine answers substring queries over 2 million entries in
   about 10 ms, with Everything-style syntax (`foo bar|baz !qux ext:pdf;docx size:>10mb dm:thisweek`).
-- Narrow a search step by step: `+` (or `Ctrl+T`) adds another search bar, and all bars combine with AND.
+- Nothing is listed until you type: an empty search shows no rows, and `*` lists every entry.
+- Tabs: `Ctrl+T` opens a new tab with its own search bars and result list, `Ctrl+W` closes it and
+  `Ctrl+Tab` cycles through them.
+- Narrow a search step by step: `+` (or `Ctrl+Shift+T`) adds another search bar, and all bars combine with AND.
   `Tab` switches between the result list and the newest bar.
 - Five columns: Name, Path, Type, Date Modified, Size (folders show their recursive size).
 - Double-click a **Path** cell to open the folder with the file selected. Double-click **Size** or

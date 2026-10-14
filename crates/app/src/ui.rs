@@ -7,6 +7,7 @@ mod preview_pane;
 mod rename_editor;
 mod search_bar;
 mod status_bar;
+mod tab_bar;
 pub(crate) mod table;
 pub(crate) mod text_view;
 mod windows_ui;

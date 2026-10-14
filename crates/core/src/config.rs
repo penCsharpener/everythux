@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::exclusion::{ExclusionRule, default_rules};
 
 /// Config schema version written by this build.
-pub const CURRENT_VERSION: u32 = 1;
+pub const CURRENT_VERSION: u32 = 2;
 
 /// Errors loading or saving the configuration.
 #[derive(Debug, thiserror::Error)]
@@ -299,6 +299,12 @@ pub struct Keybindings {
     pub focus_search: String,
     /// Toggle matching against the full path.
     pub toggle_match_path: String,
+    /// Open a new tab with an empty search.
+    pub new_tab: String,
+    /// Close the current tab (the last tab can't be closed).
+    pub close_tab: String,
+    /// Select the next tab, wrapping around. With Shift added it selects the previous one.
+    pub next_tab: String,
     /// Add a search bar below the others (its query is combined with theirs by AND).
     pub add_search_bar: String,
     /// Close the focused extra search bar.
@@ -317,8 +323,11 @@ impl Default for Keybindings {
             toggle_preview: "Ctrl+P".to_owned(),
             focus_search: "Ctrl+F".to_owned(),
             toggle_match_path: "Ctrl+U".to_owned(),
-            add_search_bar: "Ctrl+T".to_owned(),
-            close_search_bar: "Ctrl+W".to_owned(),
+            new_tab: "Ctrl+T".to_owned(),
+            close_tab: "Ctrl+W".to_owned(),
+            next_tab: "Ctrl+Tab".to_owned(),
+            add_search_bar: "Ctrl+Shift+T".to_owned(),
+            close_search_bar: "Ctrl+Shift+W".to_owned(),
             switch_focus: "Tab".to_owned(),
         }
     }
@@ -464,6 +473,22 @@ pub fn migrate(value: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     // Version 0 (no field) -> 1: nothing to rename yet; just stamp the version.
+    // Version 1 -> 2: Ctrl+T and Ctrl+W moved to tabs; the search bar bindings that still hold
+    // the old defaults follow to their new ones, customised bindings are left alone.
+    if version < 2
+        && let Some(keys) = obj
+            .get_mut("keybindings")
+            .and_then(serde_json::Value::as_object_mut)
+    {
+        for (name, old, new) in [
+            ("add_search_bar", "Ctrl+T", "Ctrl+Shift+T"),
+            ("close_search_bar", "Ctrl+W", "Ctrl+Shift+W"),
+        ] {
+            if keys.get(name).and_then(serde_json::Value::as_str) == Some(old) {
+                keys.insert(name.to_owned(), new.into());
+            }
+        }
+    }
     if version < u64::from(CURRENT_VERSION) {
         obj.insert("version".to_owned(), CURRENT_VERSION.into());
     }
@@ -474,6 +499,20 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn version_1_search_bar_bindings_follow_the_tab_shortcuts() {
+        let json =
+            r#"{"version": 1, "keybindings": {"add_search_bar": "Ctrl+T", "close_search_bar": "Alt+W"}}"#;
+        let config = Config::from_json(json, Path::new("c.json")).expect("loads");
+        assert_eq!(config.version, CURRENT_VERSION);
+        assert_eq!(config.keybindings.add_search_bar, "Ctrl+Shift+T");
+        assert_eq!(
+            config.keybindings.close_search_bar, "Alt+W",
+            "custom binding kept"
+        );
+        assert_eq!(config.keybindings.new_tab, "Ctrl+T");
+    }
 
     #[test]
     fn preview_pane_fields_default_when_missing() {

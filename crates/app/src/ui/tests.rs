@@ -1728,6 +1728,8 @@ mod search_bars {
         r.harness.run_steps(2);
     }
 
+    const CTRL_SHIFT: Modifiers = Modifiers::CTRL.plus(Modifiers::SHIFT);
+
     fn press(r: &mut Rig, modifiers: Modifiers, key: Key) {
         r.harness.key_press_modifiers(modifiers, key);
         r.harness.run_steps(3);
@@ -1969,42 +1971,66 @@ mod search_bars {
     }
 
     #[test]
-    fn ctrl_t_and_ctrl_w_add_and_close_bars() {
+    fn ctrl_shift_t_and_w_add_and_close_bars() {
         let mut r = with_bars(1);
         type_text(&mut r, "a");
-        press(&mut r, Modifiers::CTRL, Key::T);
+        press(&mut r, CTRL_SHIFT, Key::T);
         assert_eq!(ids(&r), [0, 1]);
         assert_eq!(focused_bar(&r), Some(1));
         type_text(&mut r, "b");
-        press(&mut r, Modifiers::CTRL, Key::T);
+        press(&mut r, CTRL_SHIFT, Key::T);
         type_text(&mut r, "c");
         assert_eq!(texts(&r), ["a", "b", "c"]);
 
-        press(&mut r, Modifiers::CTRL, Key::W);
+        press(&mut r, CTRL_SHIFT, Key::W);
         assert_eq!(ids(&r), [0, 1]);
         assert_eq!(focused_bar(&r), Some(1), "the bar above");
-        press(&mut r, Modifiers::CTRL, Key::W);
+        press(&mut r, CTRL_SHIFT, Key::W);
         assert_eq!(ids(&r), [0]);
         assert_eq!(focused_bar(&r), Some(FIRST_BAR));
-        press(&mut r, Modifiers::CTRL, Key::W);
-        assert_eq!(texts(&r), ["a"], "Ctrl+W never closes the first bar");
+        press(&mut r, CTRL_SHIFT, Key::W);
+        assert_eq!(texts(&r), ["a"], "Ctrl+Shift+W never closes the first bar");
         assert_eq!(r.fake.searches().last().expect("a search").texts, ["a"]);
 
-        // Ctrl+T also works from the list.
+        // Ctrl+Shift+T also works from the list.
         r.show_default();
         r.click_cell("notes.txt", Modifiers::NONE);
-        press(&mut r, Modifiers::CTRL, Key::T);
+        press(&mut r, CTRL_SHIFT, Key::T);
         assert_eq!(ids(&r), [0, 3]);
         assert_eq!(focused_bar(&r), Some(3));
+    }
+
+    #[test]
+    fn ctrl_t_opens_an_empty_tab_and_ctrl_w_closes_it() {
+        let mut r = with_bars(1);
+        type_text(&mut r, "a");
+        press(&mut r, Modifiers::CTRL, Key::T);
+        assert_eq!(r.harness.state().tab_count(), 2);
+        assert_eq!(r.harness.state().active_tab, 1);
+        assert_eq!(texts(&r), [""], "the new tab has one empty bar");
+        assert_eq!(focused_bar(&r), Some(FIRST_BAR));
+        type_text(&mut r, "b");
+
+        press(&mut r, Modifiers::CTRL, Key::Tab);
+        assert_eq!(r.harness.state().active_tab, 0);
+        assert_eq!(texts(&r), ["a"]);
+        press(&mut r, CTRL_SHIFT, Key::Tab);
+        assert_eq!(texts(&r), ["b"], "Ctrl+Shift+Tab goes back");
+
+        press(&mut r, Modifiers::CTRL, Key::W);
+        assert_eq!(r.harness.state().tab_count(), 1);
+        assert_eq!(texts(&r), ["a"]);
+        press(&mut r, Modifiers::CTRL, Key::W);
+        assert_eq!(r.harness.state().tab_count(), 1, "the last tab stays");
     }
 
     #[test]
     fn eight_bar_limit_disables_plus() {
         let mut r = with_bars(1);
         for _ in 0..MAX_SEARCH_BARS + 2 {
-            press(&mut r, Modifiers::CTRL, Key::T);
+            press(&mut r, CTRL_SHIFT, Key::T);
         }
-        assert_eq!(ids(&r).len(), MAX_SEARCH_BARS, "Ctrl+T stops at the limit");
+        assert_eq!(ids(&r).len(), MAX_SEARCH_BARS, "Ctrl+Shift+T stops at the limit");
         let plus = r.harness.get_by_label(ADD);
         assert!(plus.accesskit_node().is_disabled(), "+ is disabled");
         plus.click();
@@ -2018,7 +2044,7 @@ mod search_bars {
         // first bar's field, so focus the newest bar first.)
         let newest = r.harness.state().search.newest();
         focus_bar(&mut r, newest);
-        press(&mut r, Modifiers::CTRL, Key::W);
+        press(&mut r, CTRL_SHIFT, Key::W);
         assert!(!r.harness.get_by_label(ADD).accesskit_node().is_disabled());
     }
 
@@ -2031,7 +2057,9 @@ mod search_bars {
         assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())), "editing");
         // Bar shortcuts are suspended while the editor is open.
         press(&mut r, Modifiers::CTRL, Key::T);
-        assert_eq!(ids(&r), [0, 1], "Ctrl+T did not add a bar");
+        press(&mut r, CTRL_SHIFT, Key::T);
+        assert_eq!(ids(&r), [0, 1], "no bar was added");
+        assert_eq!(r.harness.state().tab_count(), 1, "no tab was opened");
         type_text(&mut r, "todo");
         press(&mut r, Modifiers::NONE, Key::Tab);
         assert_eq!(
@@ -2059,10 +2087,11 @@ mod search_bars {
             r.harness.state().search.shown_title.as_deref(),
             Some("rust - Everythux")
         );
-        press(&mut r, Modifiers::CTRL, Key::T);
+        press(&mut r, CTRL_SHIFT, Key::T);
         type_text(&mut r, "path:src");
         r.show_default();
-        assert!(r.harness.query_by_label("rust AND path:src").is_some());
+        // Shown in the status bar and, truncated to the tab label, in the tab strip.
+        assert!(r.harness.query_all_by_label("rust AND path:src").count() >= 1);
         assert_eq!(
             r.harness.state().search.shown_title.as_deref(),
             Some("rust AND path:src - Everythux")

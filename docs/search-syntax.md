@@ -3,7 +3,7 @@
 Type in the search box and results update as you type. The same syntax works in
 `everythux-cli search`.
 
-An empty query matches everything.
+An empty query lists nothing; `*` lists every entry in the index.
 
 ## Terms
 
@@ -79,7 +79,7 @@ These are buttons or settings in the UI and flags in the CLI. They apply to the 
 
 ## Several search bars
 
-Click `+` at the right edge of the search box (or press `Ctrl+T`) to add another search bar below it.
+Click `+` at the right edge of the search box (or press `Ctrl+Shift+T`) to add another search bar below it.
 The bars are combined with AND: a file is listed only if it matches every non-empty bar. Start broad and
 narrow down, for example `ext:pdf` in the first bar, `invoice` in the second and `dm:thisyear` in the
 third.
@@ -90,7 +90,7 @@ third.
 - Empty bars are ignored.
 - The switches (case-sensitive, match full path, regular expression) apply to every bar. In regular
   expression mode each bar is its own expression.
-- Close an extra bar with its `×` button or `Ctrl+W`. The first bar can't be closed. There are at most
+- Close an extra bar with its `×` button or `Ctrl+Shift+W`. The first bar can't be closed. There are at most
   8 bars, and the extra bars are not kept across restarts.
 - `Tab` moves between the result list and the newest (bottom-most) bar. See
   [shortcuts.md](shortcuts.md).

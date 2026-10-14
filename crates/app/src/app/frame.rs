@@ -4,6 +4,7 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 
 use super::interact::{CopyKind, Nav};
 use super::{App, Command};
+use crate::keys::Bindings;
 use crate::search_bars::FIRST_BAR;
 
 /// Widget id of the first search bar, shared with the input handling.
@@ -18,6 +19,52 @@ pub(crate) fn bar_widget_id(bar: u32) -> egui::Id {
     } else {
         egui::Id::new(("everythux_search_bar", bar))
     }
+}
+
+/// Consumes the search bar and tab shortcuts, appending the commands they stand for. Returns
+/// whether one of them was a focus switch (the caller then cancels egui's own Tab traversal).
+fn bar_shortcuts(
+    i: &mut egui::InputState,
+    b: &Bindings,
+    bar_focused: bool,
+    commands: &mut Vec<Command>,
+) -> bool {
+    let mut switched_focus = false;
+    // The search bar shortcuts first: egui ignores an extra Shift, so the plain tab
+    // shortcut (Ctrl+T) would also match the bar one (Ctrl+Shift+T).
+    if i.consume_shortcut(&b.add_search_bar) {
+        commands.push(Command::AddSearchBar);
+    }
+    // Consumed in the first bar too, where it does nothing: the text field would
+    // otherwise take the key as "delete word", which is not what the binding promises.
+    if i.consume_shortcut(&b.close_search_bar) {
+        if bar_focused {
+            commands.push(Command::CloseSearchBar);
+        }
+    } else if i.consume_shortcut(&b.close_tab) {
+        commands.push(Command::CloseTab);
+    }
+    if i.consume_shortcut(&b.new_tab) {
+        commands.push(Command::NewTab);
+    }
+    let next = b.next_tab;
+    let previous = KeyboardShortcut::new(next.modifiers | Modifiers::SHIFT, next.logical_key);
+    if i.consume_shortcut(&previous) {
+        commands.push(Command::CycleTab(false));
+        switched_focus = true;
+    } else if i.consume_shortcut(&next) {
+        commands.push(Command::CycleTab(true));
+        switched_focus = true;
+    }
+    // Shift reverses the direction; with only two stops (list and newest bar) both
+    // directions toggle. Test the Shift form first, as egui ignores an extra Shift.
+    let switch = b.switch_focus;
+    let reverse = KeyboardShortcut::new(switch.modifiers | Modifiers::SHIFT, switch.logical_key);
+    if i.consume_shortcut(&reverse) || i.consume_shortcut(&switch) {
+        commands.push(Command::SwitchFocus);
+        switched_focus = true;
+    }
+    switched_focus
 }
 
 impl App {
@@ -40,6 +87,7 @@ impl App {
 
         egui::Panel::top("everythux_menu").show(ui, |ui| self.menu_bar(ui));
         self.show_banners(ui);
+        egui::Panel::top("everythux_tabs").show(ui, |ui| self.tab_bar(ui));
         egui::Panel::top("everythux_search").show(ui, |ui| self.search_bar(ui));
         egui::Panel::bottom("everythux_status").show(ui, |ui| self.status_bar(ui));
         if self.config.ui.preview_pane.enabled {
@@ -95,22 +143,7 @@ impl App {
                 commands.push(Command::Escape);
             }
             if bar_keys {
-                if i.consume_shortcut(&b.add_search_bar) {
-                    commands.push(Command::AddSearchBar);
-                }
-                // Consumed in the first bar too, where it does nothing: the text field would
-                // otherwise take Ctrl+W as "delete word", which is not what the binding promises.
-                if focused_bar.is_some() && i.consume_shortcut(&b.close_search_bar) {
-                    commands.push(Command::CloseSearchBar);
-                }
-                // Shift reverses the direction; with only two stops (list and newest bar) both
-                // directions toggle. Test the Shift form first, as egui ignores an extra Shift.
-                let switch = b.switch_focus;
-                let reverse = KeyboardShortcut::new(switch.modifiers | Modifiers::SHIFT, switch.logical_key);
-                if i.consume_shortcut(&reverse) || i.consume_shortcut(&switch) {
-                    commands.push(Command::SwitchFocus);
-                    switched_focus = true;
-                }
+                switched_focus = bar_shortcuts(i, b, focused_bar.is_some(), &mut commands);
             }
 
             // Keys for the result table. Up/Down/Page and Enter also work while the search box

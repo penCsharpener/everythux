@@ -15,7 +15,7 @@ Everythux stores its settings in one JSON file.
 
 - Every field is optional. A missing field takes its default and unknown fields are ignored, so you only need
   to write what you change, and files from older or newer versions still load.
-- `version` is the schema version (currently `1`). Older files are upgraded automatically when loaded.
+- `version` is the schema version (currently `2`). Older files are upgraded automatically when loaded.
 - The file must be valid JSON (no comments, no trailing commas). If it isn't, Everythux reports the
   line and column and does not overwrite your file.
 - The UI saves changes atomically (temp file, then rename). The desktop app reloads the file when it changes on disk.
@@ -59,8 +59,11 @@ falls back to its default, with a warning in the log.
 | `toggle_preview` | `"Ctrl+P"` | Show or hide the preview pane |
 | `focus_search` | `"Ctrl+F"` | Focus the first search bar |
 | `toggle_match_path` | `"Ctrl+U"` | Match against the full path |
-| `add_search_bar` | `"Ctrl+T"` | Add a search bar below the others; its query is combined with AND |
-| `close_search_bar` | `"Ctrl+W"` | Close the focused extra search bar (the first bar can't be closed) |
+| `new_tab` | `"Ctrl+T"` | Open a new tab with an empty search |
+| `close_tab` | `"Ctrl+W"` | Close the current tab (the last tab stays) |
+| `next_tab` | `"Ctrl+Tab"` | Next tab; with Shift added, the previous one |
+| `add_search_bar` | `"Ctrl+Shift+T"` | Add a search bar below the others; its query is combined with AND |
+| `close_search_bar` | `"Ctrl+Shift+W"` | Close the focused extra search bar (the first bar can't be closed) |
 | `switch_focus` | `"Tab"` | Move the focus between the result list and the newest search bar. The same key with `Shift` added does the same |
 
 ## `indexer`
