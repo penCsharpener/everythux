@@ -9,7 +9,12 @@ use everythux_index::{Job, ScanMode};
 
 /// Instant file search for Linux: headless interface.
 #[derive(Debug, Parser)]
-#[command(name = "everythux-cli", version, about, long_about = None)]
+#[command(
+    name = "everythux-cli",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("EVERYTHUX_BUILD_ID"), ")"),
+    about,
+    long_about = None
+)]
 pub(crate) struct Cli {
     /// Index database (default: `$XDG_DATA_HOME/everythux/index.db`, or `$EVERYTHUX_DB`).
     #[arg(long, global = true, value_name = "PATH")]

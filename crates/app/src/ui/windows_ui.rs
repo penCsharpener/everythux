@@ -315,7 +315,11 @@ impl App {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.heading("Everythux");
-                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.label(format!(
+                    "Version {} ({})",
+                    env!("CARGO_PKG_VERSION"),
+                    env!("EVERYTHUX_BUILD_ID")
+                ));
                 ui.label("Instant file search for Linux.");
                 ui.weak("MIT OR Apache-2.0");
             });

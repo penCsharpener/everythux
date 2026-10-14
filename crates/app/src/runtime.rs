@@ -85,7 +85,7 @@ fn window_icon() -> anyhow::Result<egui::IconData> {
 pub fn run() -> anyhow::Result<()> {
     let paths = AppPaths::discover().context("cannot determine the home directory")?;
     let _log_guard = init_logging(&paths.log_dir);
-    tracing::info!(config = %paths.config_file.display(), db = %paths.db_file.display(), "starting everythux");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), build = env!("EVERYTHUX_BUILD_ID"), config = %paths.config_file.display(), db = %paths.db_file.display(), "starting everythux");
     let (config, warnings) = load_config(&paths);
 
     let mut viewport = egui::ViewportBuilder::default()

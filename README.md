@@ -30,6 +30,10 @@ cargo build --release
 ./target/release/everythux-cli --help      # headless: reindex, search, stats, exclusions, config
 ```
 
+The version string includes the git commit the binary was built from, for example `0.5.0-dev (ef0366a, modified)`
+(`modified` means uncommitted changes). It is shown in Help > About, logged at startup and printed by
+`everythux-cli --version`, so you can tell a stale `target/release` build from a fresh one.
+
 Optional runtime tools: `poppler-utils` (PDF previews), `ffmpeg` (video previews), `xdg-utils` (fallback
 for opening files). Opening a folder with the file selected needs a file manager that implements
 `org.freedesktop.FileManager1` (Nautilus, Dolphin, Nemo, Caja, Thunar).

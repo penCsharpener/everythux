@@ -1053,4 +1053,132 @@ mod rename {
         assert_eq!(edit.row, 1, "the editor followed its entry");
         assert_eq!(edit.buffer, "to.txt");
     }
+    /// The docs folder after `notes.txt` became `todo.txt`: the new name sorts last.
+    fn after_rename() -> (
+        std::sync::Arc<everythux_core::snapshot::IndexSnapshot>,
+        Vec<everythux_core::ids::EntryId>,
+    ) {
+        let mut b = crate::testkit::SnapshotBuilder::new();
+        let home = b.dir("/home/me", None);
+        let docs = b.dir("/home/me/docs", Some(home));
+        let report = b.file(docs, "report.pdf", 2048, 1);
+        let todo = b.file(docs, "todo.txt", 10, 2);
+        let junk = b.file(docs, "aaa.tmp", 1, 1);
+        (b.finish(), vec![report, junk, todo])
+    }
+
+    /// Delivers the worker's answer and the refreshed results, like the real backend does.
+    fn finish_rename(r: &mut Rig) {
+        r.fake.send(BackendEvent::Renamed {
+            from: NOTES.into(),
+            new_name: "todo.txt".into(),
+            undo: false,
+            result: Ok("/home/me/docs/todo.txt".into()),
+        });
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.jobs(),
+            [Job::Renamed {
+                from: NOTES.into(),
+                to: "/home/me/docs/todo.txt".into()
+            }],
+            "the index is told about the rename"
+        );
+        let (snap, ids) = after_rename();
+        let generation = r.harness.state().search.latest_generation;
+        r.fake.send_results(generation, &snap, &ids, None);
+        r.harness.run_steps(4);
+    }
+
+    fn assert_renamed_and_reselected(r: &Rig) {
+        let app = r.harness.state();
+        assert!(app.rename.is_none());
+        assert_eq!(
+            app.selection.rows().collect::<Vec<_>>(),
+            [2],
+            "todo.txt is selected"
+        );
+        assert!(r.harness.query_by_label("todo.txt").is_some(), "new name shown");
+        assert!(r.harness.query_by_label("notes.txt").is_none(), "old name gone");
+    }
+
+    #[test]
+    fn whole_flow_from_a_fresh_app_through_events_only() {
+        let mut r = rig();
+        r.show_default();
+        r.click_cell("notes.txt", Modifiers::NONE);
+        r.harness.key_press(Key::F2);
+        r.harness.run_steps(4);
+        assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())));
+        type_text(&mut r, "todo");
+        press(&mut r, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "todo.txt", false)],
+            "Enter renamed and did not also open the file"
+        );
+        finish_rename(&mut r);
+        assert_renamed_and_reselected(&r);
+    }
+
+    #[test]
+    fn arrow_keys_then_f2_with_the_search_box_focused() {
+        let mut r = rig();
+        r.harness.run_steps(3);
+        r.harness.get_by_role(egui::accesskit::Role::TextInput).focus();
+        r.harness.run_steps(2);
+        r.harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .type_text("txt");
+        r.harness.run_steps(3);
+        r.show_default();
+        assert!(r.harness.ctx.memory(|m| m.has_focus(crate::app::search_id())));
+        press(&mut r, Key::ArrowDown);
+        press(&mut r, Key::ArrowDown);
+        press(&mut r, Key::F2);
+        assert_eq!(buffer(&r).as_deref(), Some("notes.txt"), "F2 opened the editor");
+        assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())));
+        type_text(&mut r, "todo");
+        assert_eq!(r.harness.state().search.text, "txt", "the search box got no text");
+        assert_eq!(buffer(&r).as_deref(), Some("todo.txt"));
+        press(&mut r, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "todo.txt", false)]
+        );
+        finish_rename(&mut r);
+        assert_renamed_and_reselected(&r);
+    }
+
+    #[test]
+    fn context_menu_rename_then_typing_and_enter() {
+        let mut r = rig();
+        r.show_default();
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        r.harness.get_by_label_contains("Rename…").click();
+        r.harness.run_steps(4);
+        assert!(
+            r.harness.ctx.memory(|m| m.has_focus(editor_id())),
+            "editor focused"
+        );
+        type_text(&mut r, "todo");
+        press(&mut r, Key::Enter);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [rename_action(NOTES, "todo.txt", false)]
+        );
+        finish_rename(&mut r);
+        assert_renamed_and_reselected(&r);
+    }
+
+    #[test]
+    fn escape_then_f2_again_works() {
+        let mut r = editing();
+        press(&mut r, Key::Escape);
+        assert!(r.harness.state().rename.is_none());
+        press(&mut r, Key::F2);
+        assert!(r.harness.state().rename.is_some(), "reopened");
+        assert!(r.harness.ctx.memory(|m| m.has_focus(editor_id())));
+    }
 }
