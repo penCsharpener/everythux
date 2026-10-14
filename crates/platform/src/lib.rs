@@ -8,6 +8,7 @@
 
 mod error;
 pub mod file_manager;
+pub mod fileops;
 pub mod mime;
 pub mod udisks;
 pub mod uri;

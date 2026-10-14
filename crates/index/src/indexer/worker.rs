@@ -84,6 +84,7 @@ fn describe(job: &Job) -> String {
         Job::RescanPath { path, mode } => format!("Rescanning {} ({})", path.display(), how(mode)),
         Job::ApplyExclusions => "Applying exclusions".to_owned(),
         Job::RefreshDirs(dirs) => format!("Refreshing {} folders", dirs.len()),
+        Job::Renamed { from, .. } => format!("Renaming {}", from.display()),
     }
 }
 
@@ -317,6 +318,7 @@ fn execute(
         Job::RescanPath { path, mode } => jobs::rescan_path(ctx, store, tracker, path, *mode),
         Job::ApplyExclusions => jobs::apply_exclusions(ctx, store),
         Job::RefreshDirs(paths) => jobs::refresh_dirs(ctx, store, tracker, paths),
+        Job::Renamed { .. } => todo!("Phase D: Store::rename_path"),
     }
 }
 

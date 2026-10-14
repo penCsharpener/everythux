@@ -58,6 +58,14 @@ pub enum Job {
     ApplyExclusions,
     /// Re-list exactly these folders non-recursively (live-update batches from the watcher).
     RefreshDirs(Vec<PathBuf>),
+    /// A file or folder was renamed in place by the app: update the index directly (entry name,
+    /// and for folders the path prefix of every descendant) without re-walking anything.
+    Renamed {
+        /// Old absolute path.
+        from: PathBuf,
+        /// New absolute path (same parent folder).
+        to: PathBuf,
+    },
 }
 
 /// Identifies a submitted job in events.
