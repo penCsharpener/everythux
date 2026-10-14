@@ -356,20 +356,20 @@ A user can type a broad query in bar 1 (`ext:pdf`), narrow it in bar 2 (`invoice
   across filesystems (impossible with `rename(2)` anyway).
 
 ### Tasks
-- [ ] `platform/fileops.rs`: `rename_in_place` + `RenameError`, `NOREPLACE` with fallback; unit tests
+- [x] `platform/fileops.rs`: `rename_in_place` + `RenameError`, `NOREPLACE` with fallback; unit tests
       on temp dirs (success, exists, missing source, permission denied when not root, non-UTF-8
       names, 255-byte limit).
-- [ ] `index`: `Job::Renamed`, `Store::rename_path` for files and folders (prefix rewrite),
+- [x] `index`: `Job::Renamed`, `Store::rename_path` for files and folders (prefix rewrite),
       `total_size` unchanged for the subtree; integration tests including a renamed folder with
       10 000 descendants (no re-walk: check `dirs_listed == 0` in `JobStats`), and one test that a
       watcher event after the job is a no-op.
-- [ ] `app`: rename state (`editing: Option<RenameEdit { entry, buffer, warning, confirmed }>`),
+- [x] `app`: rename state (`editing: Option<RenameEdit { entry, buffer, warning, confirmed }>`),
       the editor in `ui/table.rs` Name cell, `F2` and the context-menu entry, validation, the
       platform action and result event, the `Job::Renamed` submit, `pending_reselect`, and the
       Undo toast.
-- [ ] Shortcut suspension while editing (`app/frame.rs`); `Tab` commits instead of switching focus.
-- [ ] Optional `ui.rename_on_slow_click` (default off).
-- [ ] Docs: `docs/shortcuts.md` (F2, Enter, Esc), README feature list.
+- [x] Shortcut suspension while editing (`app/frame.rs`); `Tab` commits instead of switching focus.
+- [x] Optional `ui.rename_on_slow_click` (default off).
+- [x] Docs: `docs/shortcuts.md` (F2, Enter, Esc), README feature list.
 
 ### Tests
 - `platform`: the cases listed in the tasks; `NOREPLACE` never overwrites (create the target first,

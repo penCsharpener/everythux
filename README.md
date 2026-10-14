@@ -32,7 +32,7 @@ cargo build --release
 ./target/release/everythux-cli --help      # headless: reindex, search, stats, exclusions, config
 ```
 
-The version string includes the git commit the binary was built from, for example `0.5.0-dev (ef0366a, modified)`
+The version string includes the git commit the binary was built from, for example `0.5.0 (ef0366a, modified)`
 (`modified` means uncommitted changes). It is shown in Help > About, logged at startup and printed by
 `everythux-cli --version`, so you can tell a stale `target/release` build from a fresh one.
 
