@@ -73,6 +73,14 @@ impl eframe::App for EverythuxApp {
     }
 }
 
+/// The orange magnifying glass shown in the taskbar and window decorations (see `packaging/everythux.svg`).
+const WINDOW_ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
+
+/// Decodes [`WINDOW_ICON_PNG`] into the RGBA data the windowing system expects.
+fn window_icon() -> anyhow::Result<egui::IconData> {
+    eframe::icon_data::from_png_bytes(WINDOW_ICON_PNG).context("invalid PNG data")
+}
+
 /// Starts the application and blocks until the window is closed.
 pub fn run() -> anyhow::Result<()> {
     let paths = AppPaths::discover().context("cannot determine the home directory")?;
@@ -80,12 +88,17 @@ pub fn run() -> anyhow::Result<()> {
     tracing::info!(config = %paths.config_file.display(), db = %paths.db_file.display(), "starting everythux");
     let (config, warnings) = load_config(&paths);
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("Everythux")
+        .with_app_id("everythux")
+        .with_inner_size([1100.0, 700.0])
+        .with_min_inner_size([480.0, 240.0]);
+    match window_icon() {
+        Ok(icon) => viewport = viewport.with_icon(icon),
+        Err(error) => tracing::warn!(?error, "cannot decode the window icon, continuing without one"),
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Everythux")
-            .with_app_id("everythux")
-            .with_inner_size([1100.0, 700.0])
-            .with_min_inner_size([480.0, 240.0]),
+        viewport,
         persist_window: true,
         ..eframe::NativeOptions::default()
     };
@@ -109,6 +122,23 @@ pub fn run() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn embedded_window_icon_decodes_to_a_square_rgba_image() {
+        let icon = window_icon().expect("the embedded icon is a valid PNG");
+        assert_eq!(icon.width, icon.height);
+        assert!(icon.width >= 64, "icon too small: {}", icon.width);
+        let pixels = usize::try_from(icon.width * icon.height).expect("fits");
+        assert_eq!(icon.rgba.len(), pixels * 4);
+        assert!(
+            icon.rgba.as_chunks::<4>().0.iter().any(|px| px[3] == 0),
+            "corners should be transparent"
+        );
+        assert!(
+            icon.rgba.as_chunks::<4>().0.iter().any(|px| px[3] == 255),
+            "the glass should be opaque"
+        );
+    }
 
     #[test]
     fn broken_config_falls_back_to_defaults_and_keeps_a_copy() {

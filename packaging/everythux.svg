@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <title>Everythux</title>
-  <!-- folder: back panel with tab, then a lighter front panel -->
-  <path d="M22 66a14 14 0 0 1 14-14h52a14 14 0 0 1 10.5 4.7L116 70h104a14 14 0 0 1 14 14v114a14 14 0 0 1-14 14H36a14 14 0 0 1-14-14z" fill="#2b6cd9"/>
-  <path d="M22 100a14 14 0 0 1 14-14h184a14 14 0 0 1 14 14v98a14 14 0 0 1-14 14H36a14 14 0 0 1-14-14z" fill="#4c8df6"/>
-  <!-- magnifier: handle, ring, lens -->
-  <path d="M186 180l36 36" fill="none" stroke="#0f172a" stroke-width="22" stroke-linecap="round"/>
-  <circle cx="150" cy="144" r="54" fill="#ffffff" stroke="#0f172a" stroke-width="14"/>
-  <!-- lightning bolt in the lens -->
-  <path d="M158 108l-30 44h20l-8 32 34-48h-21z" fill="#f5a524"/>
+  <!-- lens glass: faint warm tint so the icon stays readable on dark and light panels -->
+  <circle cx="104" cy="104" r="60" fill="#FFD9A3" fill-opacity="0.45"/>
+  <!-- dark outline pass: handle and ring merge into one silhouette -->
+  <g fill="none" stroke="#C2620F" stroke-linecap="round">
+    <path d="M152 152L212 212" stroke-width="46"/>
+    <circle cx="104" cy="104" r="62" stroke-width="40"/>
+  </g>
+  <!-- orange fill pass -->
+  <g fill="none" stroke="#F28C28" stroke-linecap="round">
+    <path d="M152 152L212 212" stroke-width="30"/>
+    <circle cx="104" cy="104" r="62" stroke-width="24"/>
+  </g>
+  <!-- lens highlight -->
+  <path d="M64 100A42 42 0 0 1 100 64" fill="none" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="10" stroke-linecap="round"/>
 </svg>

@@ -10,3 +10,4 @@ Terminal=false
 Categories=Utility;FileTools;System;
 Keywords=search;find;files;locate;index;everything;
 StartupNotify=true
+StartupWMClass=everythux
