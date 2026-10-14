@@ -36,9 +36,19 @@ pub(crate) enum Command {
     ShowAbout,
     /// `Escape`: close the topmost popup, else clear the focused search bar (or the first).
     Escape,
-    /// `Ctrl+T`: add a search bar.
+    /// `Ctrl+T`: open a new tab with an empty search.
+    NewTab,
+    /// `Ctrl+W`: close the current tab.
+    CloseTab,
+    /// Tab strip: close this tab.
+    CloseTabAt(usize),
+    /// Tab strip: show this tab.
+    SelectTab(usize),
+    /// `Ctrl+Tab` (forward) / `Ctrl+Shift+Tab` (backward).
+    CycleTab(bool),
+    /// `Ctrl+Shift+T`: add a search bar.
     AddSearchBar,
-    /// `Ctrl+W`: close the focused extra search bar.
+    /// `Ctrl+Shift+W`: close the focused extra search bar.
     CloseSearchBar,
     /// `Tab` / `Shift+Tab`: move the focus between the result list and the newest search bar.
     SwitchFocus,
@@ -110,6 +120,11 @@ impl App {
                     }
                 }
             }
+            Command::NewTab => self.new_tab(),
+            Command::CloseTab => self.close_tab(self.active_tab),
+            Command::CloseTabAt(index) => self.close_tab(index),
+            Command::SelectTab(index) => self.select_tab(index),
+            Command::CycleTab(forward) => self.cycle_tab(forward),
             Command::AddSearchBar => self.add_search_bar(),
             Command::CloseSearchBar => {
                 if let Some(bar) = self.focused_bar(false) {

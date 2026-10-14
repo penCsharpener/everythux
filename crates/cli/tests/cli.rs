@@ -156,7 +156,7 @@ fn config_path_show_and_reset() {
     assert_eq!(sb.ok(&["config", "path"]).trim(), sb.config().to_str().unwrap());
 
     let shown: Value = serde_json::from_str(&sb.ok(&["config", "show"])).unwrap();
-    assert_eq!(shown["version"], json!(1));
+    assert_eq!(shown["version"], json!(2));
     assert_eq!(shown["volumes"]["auto_discover_fs_types"], json!(["ext4"]));
     assert!(!sb.config().exists(), "show doesn't create the file");
 

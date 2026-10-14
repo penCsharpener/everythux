@@ -12,6 +12,7 @@ mod interact;
 mod rename;
 mod search;
 mod settings;
+mod tabs;
 mod windows;
 
 use std::sync::Arc;
@@ -30,6 +31,11 @@ pub(crate) use interact::{CellEvent, ContextAction, CopyKind, Effect};
 pub(crate) use rename::CommitTrigger;
 pub(crate) use settings::valid_rules;
 
+/// Most tabs that can be open at once.
+pub(crate) const fn tabs_limit() -> usize {
+    tabs::MAX_TABS
+}
+
 use crate::backend::{Backend, BackendEvent};
 use crate::exclusions::{ExclusionEditor, ExclusionPopup};
 use crate::keys::Bindings;
@@ -42,6 +48,7 @@ use crate::selection::Selection;
 use crate::status::{IndexStatus, Toast};
 use crate::ui::table::RowCache;
 use crate::volumes::VolumesWindow;
+use tabs::TabSlot;
 
 /// Row height of the result table in logical pixels.
 pub(crate) const ROW_HEIGHT: f32 = 20.0;
@@ -88,6 +95,10 @@ pub(crate) struct App {
     pub(crate) bindings: Bindings,
     pub(crate) banners: Vec<Banner>,
 
+    /// The tabs other than the active one, in tab order; the slot of the active tab is unused.
+    /// The active tab's own state is in `search`, `results` and `selection` below.
+    pub(crate) tabs: Vec<TabSlot>,
+    pub(crate) active_tab: usize,
     pub(crate) search: SearchState,
     pub(crate) results: Option<ResultsView>,
     pub(crate) selection: Selection,
@@ -154,6 +165,8 @@ impl App {
             config,
             bindings,
             banners,
+            tabs: vec![TabSlot::default()],
+            active_tab: 0,
             search: SearchState::default(),
             results: None,
             selection: Selection::default(),

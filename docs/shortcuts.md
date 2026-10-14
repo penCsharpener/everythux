@@ -9,8 +9,11 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 |-------|---------|--------|
 | Typing | anywhere | Search. The search box is focused on start |
 | `Ctrl+F` | global | Focus the first search bar |
-| `Ctrl+T` | global | Add a search bar below the others and focus it. Its query is combined with AND (at most 8 bars) |
-| `Ctrl+W` | extra search bar | Close the focused search bar and focus the one above. Does nothing in the first bar |
+| `Ctrl+T` | global | Open a new tab with an empty search and focus it (at most 32 tabs) |
+| `Ctrl+W` | global | Close the current tab. The last tab stays |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | global | Next / previous tab, wrapping around |
+| `Ctrl+Shift+T` | global | Add a search bar below the others and focus it. Its query is combined with AND (at most 8 bars) |
+| `Ctrl+Shift+W` | extra search bar | Close the focused search bar and focus the one above. Does nothing in the first bar |
 | `Tab` / `Shift+Tab` | global | From the result list (or with nothing focused): focus the newest, bottom-most search bar. From any search bar: focus the result list, keeping the selection (or selecting the first row). `Tab` never walks through the table cells |
 | `Esc` | search bar | Clear the focused search bar (the first bar when no bar has the focus) |
 | `Ctrl+Shift+R` | global | Full reindex of all volumes (background, cancellable). Works while the search box has focus |

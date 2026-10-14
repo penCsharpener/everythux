@@ -156,7 +156,7 @@ fn requests_submitted_while_the_first_index_builds_are_answered() {
 #[test]
 fn results_honour_sort_and_limit() {
     let (service, rx) = SearchService::start(snapshot(&[]));
-    let mut req = request("");
+    let mut req = request("*");
     req.sort = Sort {
         column: everythux_core::config::ColumnId::Name,
         ascending: false,
@@ -197,5 +197,11 @@ fn several_bars_combine_with_and_and_report_the_failing_bar() {
     let mut none = request("");
     none.texts.clear();
     service.submit(none);
-    assert_eq!(recv(&rx).ids.len(), 4, "no bars match everything");
+    assert!(recv(&rx).ids.is_empty(), "no bars list nothing");
+
+    service.submit(request("   "));
+    assert!(recv(&rx).ids.is_empty(), "blank bars list nothing");
+
+    service.submit(request("*"));
+    assert_eq!(recv(&rx).ids.len(), 4, "* lists everything");
 }

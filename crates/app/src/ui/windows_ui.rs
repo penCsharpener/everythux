@@ -270,6 +270,13 @@ impl App {
             ),
             (d(b.quick_rescan), "global", "Quick rescan"),
             (d(b.focus_search), "global", "Focus the first search bar"),
+            (d(b.new_tab), "global", "New tab with an empty search"),
+            (d(b.close_tab), "global", "Close the current tab"),
+            (
+                format!("{0} / Shift+{0}", d(b.next_tab)),
+                "global",
+                "Next / previous tab",
+            ),
             (d(b.add_search_bar), "global", "Add a search bar (AND)"),
             (d(b.close_search_bar), "search bar", "Close this extra search bar"),
             (

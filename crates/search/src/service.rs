@@ -22,7 +22,8 @@ use crate::query::{QueryOptions, parse_many};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchRequest {
     /// The text of each search bar. Each is parsed on its own and the results are combined with
-    /// AND ([`crate::parse_many`]); empty texts change nothing, and no texts match everything.
+    /// AND ([`crate::parse_many`]); empty texts change nothing. When every text is blank nothing
+    /// is listed; `*` lists every entry.
     pub texts: Vec<String>,
     /// Switches.
     pub options: QueryOptions,
@@ -250,7 +251,12 @@ impl Worker {
             return;
         };
         let started = Instant::now();
+        // Nothing typed lists nothing; `*` is how you ask for every entry.
+        let blank = request.texts.iter().all(|t| t.trim().is_empty());
         let outcome = parse_many(&request.texts, request.options).map(|query| {
+            if blank {
+                return Some(Vec::new());
+            }
             let cancelled = || {
                 self.shared.generation.load(Ordering::Relaxed) != generation
                     || self.shared.closed.load(Ordering::Relaxed)
@@ -371,6 +377,14 @@ mod tests {
         let results = run_queued(vec![search_msg(1, "\"open")], 1);
         assert_eq!(results.len(), 1);
         assert!(results[0].error.is_some());
+        assert!(results[0].ids.is_empty());
+    }
+
+    #[test]
+    fn worker_lists_nothing_for_blank_texts() {
+        let results = run_queued(vec![search_msg(1, "  ")], 1);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].error.is_none());
         assert!(results[0].ids.is_empty());
     }
 

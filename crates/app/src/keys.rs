@@ -141,6 +141,9 @@ pub(crate) struct Bindings {
     pub(crate) toggle_preview: KeyboardShortcut,
     pub(crate) focus_search: KeyboardShortcut,
     pub(crate) toggle_match_path: KeyboardShortcut,
+    pub(crate) new_tab: KeyboardShortcut,
+    pub(crate) close_tab: KeyboardShortcut,
+    pub(crate) next_tab: KeyboardShortcut,
     pub(crate) add_search_bar: KeyboardShortcut,
     pub(crate) close_search_bar: KeyboardShortcut,
     pub(crate) switch_focus: KeyboardShortcut,
@@ -171,6 +174,9 @@ impl Bindings {
             &config.toggle_match_path,
             &defaults.toggle_match_path,
         );
+        let new_tab = key("new_tab", &config.new_tab, &defaults.new_tab);
+        let close_tab = key("close_tab", &config.close_tab, &defaults.close_tab);
+        let next_tab = key("next_tab", &config.next_tab, &defaults.next_tab);
         let add_search_bar = key("add_search_bar", &config.add_search_bar, &defaults.add_search_bar);
         let close_search_bar = key(
             "close_search_bar",
@@ -194,6 +200,9 @@ impl Bindings {
             toggle_preview,
             focus_search,
             toggle_match_path,
+            new_tab,
+            close_tab,
+            next_tab,
             add_search_bar,
             close_search_bar,
             switch_focus,
@@ -298,11 +307,17 @@ mod tests {
         assert!(bindings.warnings.is_empty(), "{:?}", bindings.warnings);
         assert_eq!(
             bindings.add_search_bar,
-            KeyboardShortcut::new(Modifiers::CTRL, Key::T)
+            KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::T)
         );
         assert_eq!(
             bindings.close_search_bar,
-            KeyboardShortcut::new(Modifiers::CTRL, Key::W)
+            KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::W)
+        );
+        assert_eq!(bindings.new_tab, KeyboardShortcut::new(Modifiers::CTRL, Key::T));
+        assert_eq!(bindings.close_tab, KeyboardShortcut::new(Modifiers::CTRL, Key::W));
+        assert_eq!(
+            bindings.next_tab,
+            KeyboardShortcut::new(Modifiers::CTRL, Key::Tab)
         );
         assert_eq!(
             bindings.switch_focus,
