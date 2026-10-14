@@ -380,3 +380,247 @@ fn exclusion_editor_lists_rules_and_explains_a_path() {
     r.harness.run_steps(3);
     assert!(r.harness.query_by_label("Not excluded").is_some());
 }
+
+// --- Preview pane interaction -------------------------------------------------------------
+
+const WINDOW_WIDTH: f32 = 1200.0;
+
+fn preview_calls(r: &Rig) -> Vec<std::path::PathBuf> {
+    r.fake
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            crate::backend::fake::Call::RequestPreview(p) => Some(p),
+            _ => None,
+        })
+        .collect()
+}
+
+fn saved_widths(r: &Rig) -> Vec<f32> {
+    r.fake
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            crate::backend::fake::Call::SaveConfig(c) => Some(c.ui.preview_pane.width),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A rig with the preview pane open, `notes.txt` selected and its text preview delivered.
+fn preview_rig() -> Rig {
+    let mut r = rig();
+    r.harness.state_mut().config.ui.preview_pane.enabled = true;
+    r.show_default();
+    r.click_cell("notes.txt", Modifiers::NONE);
+    r.harness.run_steps(15);
+    let (path, id) = r
+        .harness
+        .state()
+        .preview
+        .requested
+        .clone()
+        .expect("a preview was requested after the debounce");
+    assert_eq!(path, std::path::Path::new("/home/me/docs/notes.txt"));
+    r.fake
+        .send(BackendEvent::Preview(everythux_preview::PreviewResult {
+            request: id,
+            path,
+            content: everythux_preview::PreviewContent::Text {
+                text: "hello from the preview pane".to_owned(),
+                truncated: false,
+            },
+        }));
+    r.harness.run_steps(3);
+    assert!(r.harness.query_by_label("hello from the preview pane").is_some());
+    r.fake.clear();
+    r
+}
+
+/// Vertical centre of the table row showing `name`.
+fn row_y(r: &Rig, name: &str) -> f32 {
+    r.harness.get_by_label(name).rect().center().y
+}
+
+fn assert_preview_untouched(r: &Rig, what: &str) {
+    let app = r.harness.state();
+    assert_eq!(app.selection.cursor(), Some(1), "{what}: cursor moved");
+    assert_eq!(
+        app.selection.rows().collect::<Vec<_>>(),
+        [1],
+        "{what}: selection changed"
+    );
+    assert!(
+        preview_calls(r).is_empty(),
+        "{what}: new preview request: {:?}",
+        preview_calls(r)
+    );
+    assert!(app.preview.shown.is_some(), "{what}: preview dropped");
+    assert!(
+        r.harness.query_by_label("hello from the preview pane").is_some(),
+        "{what}: preview content no longer shown"
+    );
+}
+
+#[test]
+fn clicking_inside_the_preview_pane_keeps_selection_and_preview() {
+    let mut r = preview_rig();
+    let pane_x = WINDOW_WIDTH - 100.0;
+    for y in [150.0, 300.0, 500.0] {
+        let pos = egui::pos2(pane_x, y);
+        r.harness.hover_at(pos);
+        r.harness.run_steps(1);
+        r.harness.drag_at(pos);
+        r.harness.run_steps(2);
+        r.harness.drop_at(pos);
+        r.harness.run_steps(15);
+        assert_preview_untouched(&r, &format!("click at y={y}"));
+    }
+    // Clicking the text itself (a selectable label) is part of the same promise.
+    r.harness.get_by_label("hello from the preview pane").click();
+    r.harness.run_steps(15);
+    assert_preview_untouched(&r, "click on the preview text");
+}
+
+#[test]
+fn dragging_the_preview_pane_edge_keeps_selection_and_preview() {
+    let mut r = preview_rig();
+    let start_width = r.harness.state().config.ui.preview_pane.width;
+    let edge_x = WINDOW_WIDTH - start_width;
+    let y = 300.0;
+    r.harness.hover_at(egui::pos2(edge_x, y));
+    r.harness.run_steps(2);
+    r.harness.drag_at(egui::pos2(edge_x, y));
+    r.harness.run_steps(2);
+    for step in 1..=10 {
+        r.harness.hover_at(egui::pos2(edge_x - 10.0 * step as f32, y));
+        r.harness.run_steps(1);
+        assert_preview_untouched(&r, &format!("mid-drag step {step}"));
+    }
+    assert_eq!(
+        saved_widths(&r),
+        Vec::<f32>::new(),
+        "no config writes while dragging"
+    );
+    r.harness.drop_at(egui::pos2(edge_x - 100.0, y));
+    r.harness.run_steps(15);
+    assert_preview_untouched(&r, "after the drag");
+
+    let width = r.harness.state().config.ui.preview_pane.width;
+    assert!(
+        (width - (start_width + 100.0)).abs() < 12.0,
+        "width {width} should follow the pointer from {start_width} (minus the drag threshold)"
+    );
+    let saved = saved_widths(&r);
+    assert_eq!(saved.len(), 1, "persisted exactly once: {saved:?}");
+    assert!((saved[0] - width).abs() < 1.0, "persisted the final width");
+}
+
+#[test]
+fn redelivered_identical_results_keep_the_preview_selection() {
+    let mut r = preview_rig();
+    let f = &r.fixture;
+    let ids = [f.report, f.notes, f.junk];
+    r.show(&ids);
+    r.harness.run_steps(15);
+    assert_preview_untouched(&r, "identical results re-delivered");
+}
+
+#[test]
+fn clicking_on_the_preview_pane_edge_keeps_selection_and_preview() {
+    let mut r = preview_rig();
+    let edge_x = WINDOW_WIDTH - r.harness.state().config.ui.preview_pane.width;
+    for dx in [-4.0, -2.0, 0.0, 2.0, 4.0] {
+        let pos = egui::pos2(edge_x + dx, row_y(&r, "report.pdf"));
+        r.harness.hover_at(pos);
+        r.harness.run_steps(1);
+        r.harness.drag_at(pos);
+        r.harness.run_steps(2);
+        r.harness.drop_at(pos);
+        r.harness.run_steps(15);
+        assert_preview_untouched(&r, &format!("click at edge{dx:+}"));
+    }
+}
+
+#[test]
+fn dragging_from_either_side_of_the_edge_keeps_selection_and_preview() {
+    for dx in [-4.0, -2.0, 2.0, 4.0] {
+        let mut r = preview_rig();
+        let edge_x = WINDOW_WIDTH - r.harness.state().config.ui.preview_pane.width;
+        let y = row_y(&r, "report.pdf");
+        r.harness.hover_at(egui::pos2(edge_x + dx, y));
+        r.harness.run_steps(2);
+        r.harness.drag_at(egui::pos2(edge_x + dx, y));
+        r.harness.run_steps(2);
+        for step in 1..=10 {
+            r.harness
+                .hover_at(egui::pos2(edge_x + dx - 10.0 * step as f32, y));
+            r.harness.run_steps(1);
+        }
+        r.harness.drop_at(egui::pos2(edge_x + dx - 100.0, y));
+        r.harness.run_steps(15);
+        assert_preview_untouched(&r, &format!("drag from edge{dx:+}"));
+    }
+}
+
+#[test]
+fn preview_pane_opens_at_the_configured_width_and_does_not_rewrite_it() {
+    let mut r = rig();
+    r.harness.state_mut().config.ui.preview_pane.enabled = true;
+    r.harness.state_mut().config.ui.preview_pane.width = 400.0;
+    r.harness.run_steps(5);
+    r.fake.clear();
+    r.show_default();
+    r.click_cell("notes.txt", Modifiers::NONE);
+    r.harness.run_steps(15);
+    let width = r.harness.state().config.ui.preview_pane.width;
+    assert!((width - 400.0).abs() < f32::EPSILON, "width drifted to {width}");
+    assert!(
+        saved_widths(&r).is_empty(),
+        "nothing to save: {:?}",
+        saved_widths(&r)
+    );
+    let panel = r.harness.get_by_label("Open").rect();
+    assert!(
+        panel.max.x <= WINDOW_WIDTH && panel.min.x >= WINDOW_WIDTH - 400.0,
+        "pane content must sit inside the 400px pane: {panel:?}"
+    );
+}
+
+#[test]
+fn shrinking_the_window_does_not_overwrite_the_preferred_pane_width() {
+    let mut r = rig();
+    r.harness.state_mut().config.ui.preview_pane.enabled = true;
+    r.harness.run_steps(5);
+    r.harness.set_size(Vec2::new(420.0, 600.0));
+    r.harness.run_steps(5);
+    r.harness.set_size(Vec2::new(WINDOW_WIDTH, 600.0));
+    r.harness.run_steps(5);
+    let width = r.harness.state().config.ui.preview_pane.width;
+    assert!((width - 360.0).abs() < f32::EPSILON, "width drifted to {width}");
+    assert_eq!(saved_widths(&r), Vec::<f32>::new());
+}
+
+#[test]
+fn a_background_reindex_keeps_the_selected_entry_and_its_preview() {
+    let mut r = preview_rig();
+    // Same query, freshly built snapshot, the selected entry now sits in another row.
+    let fresh = Fixture::new();
+    let generation = r.harness.state().search.latest_generation;
+    r.fake.send_results(
+        generation,
+        &fresh.snapshot,
+        &[fresh.junk, fresh.report, fresh.notes],
+        None,
+    );
+    r.harness.run_steps(15);
+    let app = r.harness.state();
+    assert_eq!(
+        app.selection.rows().collect::<Vec<_>>(),
+        [2],
+        "followed notes.txt"
+    );
+    assert!(preview_calls(&r).is_empty(), "{:?}", preview_calls(&r));
+    assert!(app.preview.shown.is_some(), "preview dropped");
+    assert!(r.harness.query_by_label("hello from the preview pane").is_some());
+}

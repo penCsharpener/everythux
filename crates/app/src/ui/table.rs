@@ -257,10 +257,14 @@ fn draw_table(ui: &mut Ui, p: &TableParams<'_>, cache: &mut RowCache) -> TableOu
         }
     });
     table.body(|body| {
+        // The last column is `remainder`: its width follows the window and the preview pane, so
+        // it says nothing about what the user chose and must not be written back to the config
+        // (that would save the config on every pane or window resize).
         out.widths = p
             .columns
             .iter()
             .zip(body.widths())
+            .take(p.columns.len().saturating_sub(1))
             .map(|(c, w)| (c.id, *w))
             .collect();
         body.rows(ROW_HEIGHT, p.view.len(), |mut row| {

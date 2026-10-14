@@ -42,6 +42,19 @@ impl Selection {
         self.ranges.iter().flat_map(Clone::clone)
     }
 
+    /// A selection of exactly `rows`. `cursor` (also used as anchor) falls back to the first row
+    /// when it is `None` or not a valid row of the new list.
+    pub(crate) fn from_rows(rows: impl IntoIterator<Item = usize>, cursor: Option<usize>) -> Self {
+        let mut sel = Self::default();
+        for row in rows {
+            sel.add_range(row..row + 1);
+        }
+        let cursor = cursor.or_else(|| sel.ranges.first().map(|r| r.start));
+        sel.anchor = cursor;
+        sel.cursor = cursor;
+        sel
+    }
+
     /// Deselects everything and forgets anchor and cursor.
     pub(crate) fn clear(&mut self) {
         *self = Self::default();
@@ -180,6 +193,16 @@ mod tests {
         assert_eq!(rows(&sel), [3, 4, 5]);
         sel.move_to(4, false);
         assert_eq!(rows(&sel), [4]);
+    }
+
+    #[test]
+    fn from_rows_merges_and_sets_the_cursor() {
+        let sel = Selection::from_rows([5, 3, 4, 9, 3], Some(9));
+        assert_eq!(rows(&sel), [3, 4, 5, 9]);
+        assert_eq!(sel.cursor(), Some(9));
+        let sel = Selection::from_rows([7, 2], None);
+        assert_eq!(sel.cursor(), Some(2), "falls back to the first row");
+        assert!(Selection::from_rows([], None).is_empty());
     }
 
     #[test]

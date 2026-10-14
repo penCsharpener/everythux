@@ -9,6 +9,9 @@ use crate::app::{App, Effect};
 use crate::format::{format_local, format_size};
 use crate::preview::PreviewShown;
 
+/// Allowed pane width in logical pixels.
+const PANE_WIDTH_RANGE: std::ops::RangeInclusive<f32> = 160.0..=1000.0;
+
 fn format_media_duration(d: Duration) -> String {
     let total = d.as_secs();
     let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
@@ -104,14 +107,30 @@ impl App {
         let response = egui::Panel::right("everythux_preview")
             .resizable(true)
             .default_size(width)
-            .size_range(160.0..=1000.0)
-            .show(ui, |ui| self.preview_pane(ui));
-        let new_width = response.response.rect.width();
-        if (new_width - width).abs() > 1.0 {
-            self.config.ui.preview_pane.width = new_width;
-            if !ui.input(|i| i.pointer.any_down()) {
-                self.config_changed();
-            }
+            .size_range(PANE_WIDTH_RANGE)
+            .show(ui, |ui| {
+                // A panel is only as wide as its content. Without this the pane would shrink to
+                // whatever the current preview needs (and to the minimum while empty), changing
+                // the layout on every selection change instead of staying where the user put it.
+                ui.take_available_width();
+                self.preview_pane(ui);
+            });
+        self.track_preview_width(response.response.rect.width(), ui.input(|i| i.pointer.any_down()));
+    }
+
+    /// Follows a user resize of the pane and persists the final width once, on release.
+    ///
+    /// The width only changes while the pointer is down: a smaller window squeezes the panel
+    /// without the user having asked for a narrower pane, and that must not overwrite the saved
+    /// preference. While dragging nothing is written; the release frame saves once.
+    fn track_preview_width(&mut self, panel_width: f32, pointer_down: bool) {
+        let pane = &mut self.config.ui.preview_pane;
+        if pointer_down && (panel_width - pane.width).abs() > 0.5 {
+            pane.width = panel_width;
+            self.preview.width_dirty = true;
+        }
+        if !pointer_down && std::mem::take(&mut self.preview.width_dirty) {
+            self.config_changed();
         }
     }
 

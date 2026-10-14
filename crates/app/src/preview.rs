@@ -37,6 +37,8 @@ pub(crate) struct PreviewState {
     /// The request in flight or already shown: path and request id.
     pub(crate) requested: Option<(PathBuf, u64)>,
     pub(crate) shown: Option<PreviewShown>,
+    /// The pane was resized and the new width is not saved yet.
+    pub(crate) width_dirty: bool,
 }
 
 impl PreviewState {

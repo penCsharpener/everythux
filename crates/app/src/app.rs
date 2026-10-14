@@ -47,6 +47,9 @@ pub(crate) struct SearchState {
     pub(crate) text: String,
     /// Generation of the most recently submitted request; older results are ignored.
     pub(crate) latest_generation: u64,
+    /// Generation of the request the current results answer. Results with the same generation
+    /// are the same query re-run against a newer snapshot.
+    pub(crate) results_generation: u64,
     /// Parse error of the last query, shown under the box.
     pub(crate) error: Option<String>,
     /// Focus the box on the next frame.

@@ -1,9 +1,17 @@
 //! Search submission and result handling.
 
+use std::collections::{HashMap, HashSet};
+use std::os::unix::ffi::OsStrExt as _;
+use std::path::PathBuf;
+
 use everythux_search::{QueryOptions, SearchRequest, SearchResults, Sort};
 
 use super::App;
 use crate::model::ResultsView;
+use crate::selection::Selection;
+
+/// Most selected rows carried over when the results are re-run against a new snapshot.
+const MAX_REMAPPED_ROWS: usize = 256;
 
 impl App {
     /// The request describing the search box and the current switches.
@@ -44,6 +52,8 @@ impl App {
             return;
         }
         self.search.error = res.error;
+        let same_request = res.generation == self.search.results_generation;
+        self.search.results_generation = res.generation;
         let view = ResultsView {
             ids: res.ids,
             snapshot: res.snapshot,
@@ -55,11 +65,63 @@ impl App {
                 && (std::sync::Arc::ptr_eq(&old.ids, &view.ids) || *old.ids == *view.ids)
         });
         if !unchanged {
-            self.selection.clear();
+            // A new snapshot with the same query (a background re-index) only moves rows around:
+            // keep whatever is still listed selected, so the preview does not vanish under the
+            // user. A different query starts from a clean selection.
+            if same_request {
+                self.selection = self.remapped_selection(&view);
+            } else {
+                self.selection.clear();
+            }
             self.scroll_to_row = None;
             self.cache.invalidate();
         }
         self.results = Some(view);
+    }
+
+    /// The current selection translated to the rows of `new`, matching entries by full path.
+    /// Entries that are gone are dropped; large selections are not carried over.
+    fn remapped_selection(&self, new: &ResultsView) -> Selection {
+        let Some(old) = &self.results else {
+            return Selection::default();
+        };
+        let rows: Vec<usize> = self.selection.rows().take(MAX_REMAPPED_ROWS + 1).collect();
+        if rows.is_empty() || rows.len() > MAX_REMAPPED_ROWS {
+            return Selection::default();
+        }
+        let cursor_path = self.selection.cursor().and_then(|r| old.full_path(r));
+        let wanted: HashSet<PathBuf> = rows
+            .iter()
+            .filter_map(|&r| old.full_path(r))
+            .chain(cursor_path.clone())
+            .collect();
+        let names: HashSet<Vec<u8>> = wanted
+            .iter()
+            .filter_map(|p| p.file_name())
+            .map(|n| n.as_bytes().to_vec())
+            .collect();
+
+        // One pass over the new rows; the cheap name comparison runs first and the path is only
+        // built for the few rows that share a name with a selected entry.
+        let snap = &*new.snapshot;
+        let mut found: HashMap<PathBuf, usize> = HashMap::with_capacity(wanted.len());
+        for (row, &id) in new.ids.iter().enumerate() {
+            if names.contains(snap.name(id)) {
+                let path = snap.full_path(id);
+                if wanted.contains(&path) {
+                    found.insert(path, row);
+                    if found.len() == wanted.len() {
+                        break;
+                    }
+                }
+            }
+        }
+        let cursor = cursor_path.and_then(|p| found.get(&p).copied());
+        let selected = rows
+            .iter()
+            .filter_map(|&r| old.full_path(r))
+            .filter_map(|p| found.get(&p).copied());
+        Selection::from_rows(selected, cursor)
     }
 }
 
@@ -175,6 +237,71 @@ mod tests {
             t.app.selection.contains(1),
             "background refresh must not lose the selection"
         );
+    }
+
+    /// Delivers the same query against a freshly built snapshot (a background re-index).
+    fn refresh_with_new_snapshot(t: &mut TestApp, names: &[&str]) {
+        let fresh = crate::testkit::Fixture::new();
+        let ids: Vec<_> = names
+            .iter()
+            .map(|n| match *n {
+                "report.pdf" => fresh.report,
+                "notes.txt" => fresh.notes,
+                "junk.js" => fresh.junk,
+                other => panic!("unknown fixture entry {other}"),
+            })
+            .collect();
+        let generation = t.app.search.latest_generation;
+        t.fake.send_results(generation, &fresh.snapshot, &ids, None);
+        t.pump();
+    }
+
+    #[test]
+    fn a_new_snapshot_keeps_the_selected_entry_at_its_new_row() {
+        let mut t = TestApp::new();
+        t.show_results(&[t.fixture.report, t.fixture.notes, t.fixture.junk]);
+        t.app.selection.select_only(1); // notes.txt
+        refresh_with_new_snapshot(&mut t, &["junk.js", "notes.txt", "report.pdf"]);
+        assert_eq!(t.app.selection.rows().collect::<Vec<_>>(), [1]);
+        refresh_with_new_snapshot(&mut t, &["notes.txt", "junk.js"]);
+        assert_eq!(
+            t.app.selection.rows().collect::<Vec<_>>(),
+            [0],
+            "followed to row 0"
+        );
+        assert_eq!(t.app.selection.cursor(), Some(0));
+        let wanted = t.app.results.as_ref().expect("results").full_path(0);
+        assert_eq!(wanted, Some("/home/me/docs/notes.txt".into()));
+    }
+
+    #[test]
+    fn a_new_snapshot_without_the_selected_entry_clears_the_selection() {
+        let mut t = TestApp::new();
+        t.show_results(&[t.fixture.report, t.fixture.notes, t.fixture.junk]);
+        t.app.selection.select_only(1);
+        refresh_with_new_snapshot(&mut t, &["junk.js", "report.pdf"]);
+        assert!(t.app.selection.is_empty());
+    }
+
+    #[test]
+    fn a_new_snapshot_keeps_a_multi_selection_that_is_still_listed() {
+        let mut t = TestApp::new();
+        t.show_results(&[t.fixture.report, t.fixture.notes, t.fixture.junk]);
+        t.app.selection.select_only(0);
+        t.app.selection.toggle(2); // report.pdf + junk.js, cursor on junk.js
+        refresh_with_new_snapshot(&mut t, &["junk.js", "notes.txt", "report.pdf"]);
+        assert_eq!(t.app.selection.rows().collect::<Vec<_>>(), [0, 2]);
+        assert_eq!(t.app.selection.cursor(), Some(0), "cursor stays on junk.js");
+    }
+
+    #[test]
+    fn a_new_query_clears_the_selection_even_if_the_entry_is_listed_again() {
+        let mut t = TestApp::new();
+        t.show_results(&[t.fixture.report, t.fixture.notes]);
+        t.app.selection.select_only(1);
+        t.app.set_search_text("txt");
+        refresh_with_new_snapshot(&mut t, &["notes.txt"]);
+        assert!(t.app.selection.is_empty());
     }
 
     #[test]
