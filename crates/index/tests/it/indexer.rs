@@ -162,6 +162,29 @@ fn quick_rescan_sees_changes_and_skips_unchanged_folders() {
     );
 }
 
+/// A folder changed within the same timestamp tick as the scan that listed it keeps its mtime.
+/// Quick scans must still re-list it ("racy" mtimes, as in git's index).
+#[test]
+fn quick_rescan_sees_changes_in_the_same_mtime_tick() {
+    let (db, tree) = (tmp(), tmp());
+    sample_tree(tree.path());
+    let tb = TreeBuilder::new(tree.path());
+    tb.file("a/b/recent.txt", 1).unwrap(); // a/b's mtime is now "just now"
+    let (indexer, rx) = start_scanned(db.path(), settings(&[tree.path()]));
+
+    // Simulate a change that lands in the same tick: add an entry, then restore the exact mtime.
+    let dir = tree.path().join("a/b");
+    let mtime = std::fs::metadata(&dir).unwrap().modified().unwrap();
+    tb.file("a/b/same_tick/z", 3).unwrap();
+    std::fs::File::open(&dir).unwrap().set_modified(mtime).unwrap();
+    assert_eq!(std::fs::metadata(&dir).unwrap().modified().unwrap(), mtime);
+
+    run_ok(&indexer, &rx, Job::RescanAll(ScanMode::Quick));
+    let snap = indexer.snapshot();
+    check_invariants(&snap);
+    assert!(listing(&snap, tree.path()).contains_key("a/b/same_tick/z"));
+}
+
 #[test]
 fn quick_misses_in_place_changes_that_full_rescans_catch() {
     let (db, tree) = (tmp(), tmp());

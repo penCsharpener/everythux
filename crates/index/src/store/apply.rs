@@ -225,7 +225,7 @@ fn insert_dir(conn: &Connection, volume_id: i64, l: &DirListing) -> rusqlite::Re
         l.parent_id,
         l.path.as_slice(),
         db_i64(l.inode),
-        l.mtime_ns
+        l.validator_mtime_ns()
     ])?;
     Ok(())
 }
@@ -233,7 +233,7 @@ fn insert_dir(conn: &Connection, volume_id: i64, l: &DirListing) -> rusqlite::Re
 /// Refreshes a stored folder's own metadata and the entry that represents it in its parent.
 fn update_dir(conn: &Connection, l: &DirListing) -> rusqlite::Result<()> {
     conn.prepare_cached("UPDATE dirs SET inode = ?1, mtime_ns = ?2 WHERE id = ?3")?
-        .execute(params![db_i64(l.inode), l.mtime_ns, l.id])?;
+        .execute(params![db_i64(l.inode), l.validator_mtime_ns(), l.id])?;
     if let Some(parent) = l.parent_id {
         conn.prepare_cached(
             "UPDATE entries SET mtime_ns = ?1, inode = ?2 WHERE dir_id = ?3 AND child_dir = ?4",

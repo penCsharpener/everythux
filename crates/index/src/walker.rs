@@ -24,6 +24,11 @@
 //! ([`KnownTree`]). A known folder whose mtime is unchanged is not read at all (its known
 //! sub-folders are still visited); a changed one is re-listed and flagged [`ListingKind::Diff`] so
 //! the store diffs it. New folders get fresh ids from the shared [`IdAlloc`].
+//!
+//! Filesystem timestamps tick coarsely (a jiffy, or whole seconds), so a folder changed in the same
+//! tick as the walk that listed it keeps its mtime. Listings of folders modified shortly before the
+//! walk started are therefore flagged [`DirListing::racy`] and stored with a deliberately stale
+//! validator mtime, which makes the next quick walk re-list them (git's "racy clean" rule).
 
 mod known;
 mod rows;
@@ -51,6 +56,10 @@ use crate::IndexError;
 const CANCEL_CHECK_EVERY: usize = 4096;
 /// Size of the per-thread `getdents64` buffer.
 const DIRENT_BUF: usize = 64 * 1024;
+/// How close to the start of a walk a folder mtime must be to count as racy (see
+/// [`DirListing::racy`]). Covers the kernel's coarse timestamp clock (one jiffy, at most 10 ms) and
+/// filesystems with whole-second (ext4 with 128-byte inodes) or 2-second (FAT) mtimes.
+const RACY_WINDOW_NS: i64 = 2_000_000_000;
 
 /// Hands out database ids for new folders. Shared by all walks of one job.
 #[derive(Debug)]
@@ -217,6 +226,9 @@ impl WalkJob<'_> {
     /// If the root itself cannot be stat'ed or isn't a folder. Everything below the root fails
     /// softly (counted in [`WalkCounters::errors`]).
     pub fn run(&self, sink: &Sender<ScanBatch>) -> Result<(), IndexError> {
+        // Read the clock before any stat: a change after this instant gets an mtime of at least
+        // (roughly) now, so only folders modified after `racy_from_ns` can hide a later change.
+        let racy_from_ns = now_ns().saturating_sub(RACY_WINDOW_NS);
         let root_bytes = self.root.as_os_str().as_bytes();
         let stat = rustix::fs::lstat(root_bytes).map_err(|e| IndexError::errno(self.root, e))?;
         if !FileType::from_raw_mode(stat.st_mode).is_dir() {
@@ -232,6 +244,7 @@ impl WalkJob<'_> {
             sink,
             root_dev: meta.dev,
             has_exclusions: !self.opts.exclusions.is_empty(),
+            racy_from_ns,
             slots: (0..slots).map(|_| Mutex::new(ScanBatch::default())).collect(),
         };
 
@@ -306,6 +319,13 @@ fn to_i64<T: Into<i128>>(v: T) -> i64 {
     i64::try_from(v).unwrap_or_default()
 }
 
+/// Wall-clock time in ns since the epoch (the clock filesystem timestamps come from).
+fn now_ns() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX))
+}
+
 fn mtime_ns(st: &Stat) -> i64 {
     to_i64(st.st_mtime)
         .saturating_mul(1_000_000_000)
@@ -353,6 +373,9 @@ struct Walker<'a, 'j> {
     sink: &'a Sender<ScanBatch>,
     root_dev: u64,
     has_exclusions: bool,
+    /// Folders with an mtime at or after this (ns since the epoch) may change again without a
+    /// new mtime: their listings are flagged racy.
+    racy_from_ns: i64,
     /// One batch per worker thread; a slot is only ever locked by its own thread (and by the
     /// final flush), so the mutex is uncontended.
     slots: Vec<Mutex<ScanBatch>>,
@@ -413,7 +436,8 @@ impl<'a> Walker<'a, '_> {
         }
     }
 
-    fn emit(&self, listing: DirListing) {
+    fn emit(&self, mut listing: DirListing) {
+        listing.racy = listing.mtime_ns >= self.racy_from_ns;
         let full = {
             let mut batch = self.slot().lock().unwrap_or_else(PoisonError::into_inner);
             batch.rows += listing.entries.len() + 1;
