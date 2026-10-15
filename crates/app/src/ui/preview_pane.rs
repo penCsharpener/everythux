@@ -168,7 +168,7 @@ struct ImageView {
 }
 
 /// An image fitted to the pane width. `Ctrl`+wheel (or a pinch) over it, or the buttons below it,
-/// zoom in up to 16× around the pointer; the zoomed image is dragged or scrolled inside a frame
+/// zoom in up to 16× around the pointer; the zoomed image is dragged (hand cursor) or scrolled inside a frame
 /// that keeps the fitted size, so the pane never grows. Double-click or "Fit" resets. The zoom is
 /// remembered per file. While zoomed, the full-resolution render is shown once it has loaded.
 fn show_image(
@@ -203,7 +203,7 @@ fn show_image(
     let image = |size: Vec2| {
         egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture))
             .fit_to_exact_size(size)
-            .sense(egui::Sense::click())
+            .sense(egui::Sense::click_and_drag())
     };
 
     let mut viewport = None;
@@ -214,9 +214,22 @@ fn show_image(
             .min_scrolled_height(fitted.y)
             .auto_shrink([false, false])
             .scroll_offset(state.offset)
+            // The image takes the drags itself (hand panning below).
+            .scroll_source(egui::scroll_area::ScrollSource {
+                drag: egui::scroll_area::DragScroll::Never,
+                ..Default::default()
+            })
             .show(ui, |ui| ui.add(image(fitted * state.zoom)));
         state.offset = area.state.offset;
         viewport = Some(area.inner_rect);
+        // Grab the image and drag it, with the hand cursors other viewers use.
+        if area.inner.dragged() {
+            state.offset = (state.offset - area.inner.drag_delta()).max(Vec2::ZERO);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            ui.ctx().request_repaint();
+        } else if area.inner.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
         area.inner
     } else {
         ui.add(image(fitted))
