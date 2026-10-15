@@ -38,6 +38,8 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   with another match, in the current sort order; the result cap applies after the filter. Not persisted.
 - 0.11.0: zoomable image previews: Ctrl+wheel, pinch or the −/+/Fit buttons (up to 16×), drag to pan,
   double-click resets; the zoom is remembered per file.
+- 0.12.0: **Cut** and **Paste here** in the row menu (system clipboard, needs wl-clipboard or xclip): paste
+  copies or moves into the right-clicked folder, never overwrites (` (copy)` suffix), then rescans.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
