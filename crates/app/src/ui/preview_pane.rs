@@ -100,13 +100,88 @@ fn meta_grid(ui: &mut Ui, meta: &MediaMeta) {
     }
 }
 
-fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize) {
-    if let Some(texture) = shown.textures.get(index) {
-        let size = fit_width(texture.size_vec2(), ui.available_width());
-        ui.add(
-            egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture)).fit_to_exact_size(size),
-        );
+/// Zoom range of an image, relative to its fitted size.
+const ZOOM_RANGE: RangeInclusive<f32> = 1.0..=16.0;
+/// Factor of the − and + buttons.
+const ZOOM_STEP: f32 = 1.5;
+/// Tallest the zoomed image area gets before it scrolls, in logical pixels.
+const ZOOMED_MAX_HEIGHT: f32 = 480.0;
+
+/// `zoom` limited to [`ZOOM_RANGE`]; anything not finite means "fit".
+fn clamp_zoom(zoom: f32) -> f32 {
+    if zoom.is_finite() {
+        zoom.clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end())
+    } else {
+        1.0
     }
+}
+
+/// An image fitted to the pane width. `Ctrl`+wheel (or a pinch) over it, or the buttons below it,
+/// zoom in up to 16×; a zoomed image is dragged or scrolled inside a frame of fixed height so the
+/// pane never grows. Double-click or "Fit" resets. The zoom is remembered per file.
+fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize) {
+    let Some(texture) = shown.textures.get(index) else {
+        return;
+    };
+    let fitted = fit_width(texture.size_vec2(), ui.available_width());
+    let id = egui::Id::new(("preview_zoom", &shown.path, index));
+    let mut zoom = clamp_zoom(ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(1.0));
+    let image = |size: Vec2| {
+        egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture))
+            .fit_to_exact_size(size)
+            .sense(egui::Sense::click())
+    };
+
+    let response = if zoom <= 1.0 {
+        ui.add(image(fitted))
+    } else {
+        let size = fitted * zoom;
+        egui::ScrollArea::both()
+            .id_salt(id)
+            .max_height(ZOOMED_MAX_HEIGHT.min(size.y))
+            .auto_shrink([false, true])
+            .show(ui, |ui| ui.add(image(size)))
+            .inner
+    };
+    if response.hovered() {
+        let wheel = ui.input(egui::InputState::zoom_delta);
+        if (wheel - 1.0).abs() > f32::EPSILON {
+            zoom = clamp_zoom(zoom * wheel);
+        }
+    }
+    if response.double_clicked() {
+        zoom = 1.0;
+    }
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(zoom > *ZOOM_RANGE.start(), egui::Button::new("−").small())
+            .on_hover_text("Zoom out (Ctrl+wheel)")
+            .clicked()
+        {
+            zoom = clamp_zoom(zoom / ZOOM_STEP);
+        }
+        if ui
+            .add_enabled(zoom < *ZOOM_RANGE.end(), egui::Button::new("+").small())
+            .on_hover_text("Zoom in (Ctrl+wheel)")
+            .clicked()
+        {
+            zoom = clamp_zoom(zoom * ZOOM_STEP);
+        }
+        if ui
+            .add_enabled(zoom > 1.0, egui::Button::new("Fit").small())
+            .on_hover_text("Fit to the pane (double-click)")
+            .clicked()
+        {
+            zoom = 1.0;
+        }
+        let pixels = if texture.size_vec2().x > 0.0 {
+            fitted.x * zoom / texture.size_vec2().x * 100.0
+        } else {
+            100.0
+        };
+        ui.weak(format!("{pixels:.0}%"));
+    });
+    ui.data_mut(|d| d.insert_temp(id, zoom));
 }
 
 fn show_content(ui: &mut Ui, shown: &PreviewShown) {
@@ -333,6 +408,13 @@ mod tests {
             (shown_width(360.0, 100.0) - 100.0).abs() < f32::EPSILON,
             "never wider than the window"
         );
+    }
+
+    #[test]
+    fn zoom_is_kept_in_range() {
+        assert!((clamp_zoom(0.2) - 1.0).abs() < f32::EPSILON);
+        assert!((clamp_zoom(100.0) - 16.0).abs() < f32::EPSILON);
+        assert!((clamp_zoom(f32::NAN) - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
