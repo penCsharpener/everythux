@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use egui::Modifiers;
-use everythux_core::config::ColumnId;
+use everythux_core::config::{ColumnId, PropertiesTarget};
 use everythux_index::{Job, ScanMode};
 
 use super::App;
@@ -218,9 +218,11 @@ impl App {
                 };
                 self.copy_effects(&rows, kind)
             }
+            // The menu entry is about the row itself; `properties_target` only steers the
+            // Size/Modified double-click.
             ContextAction::Properties => single(
                 results
-                    .prop_target(row, self.config.ui.properties_target)
+                    .prop_target(row, PropertiesTarget::Item)
                     .map(Effect::ShowProperties),
             ),
             ContextAction::ExcludeFolder => single(self.exclusion_target(row).map(Effect::ExcludeFolder)),
@@ -568,6 +570,19 @@ mod tests {
         };
         assert_eq!(target.path, PathBuf::from("/home/me/docs/report.pdf"));
         assert_eq!(target.size, 2048);
+    }
+
+    #[test]
+    fn context_menu_properties_are_those_of_the_item_not_its_folder() {
+        let (mut t, row) = setup();
+        assert_eq!(t.app.config.ui.properties_target, PropertiesTarget::Parent);
+        let fx = t.app.context_effects(row, ContextAction::Properties);
+        let [Effect::ShowProperties(target)] = fx.as_slice() else {
+            panic!("{fx:?}");
+        };
+        assert_eq!(target.path, PathBuf::from("/home/me/docs/report.pdf"));
+        assert_eq!(target.size, 2048);
+        assert!(!target.kind.is_dir());
     }
 
     #[test]

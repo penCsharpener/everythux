@@ -215,7 +215,8 @@ impl Default for PreviewPaneConfig {
     }
 }
 
-/// Which folder a Size/Modified double-click shows properties for.
+/// Which folder a Size/Modified double-click shows properties for. (The context menu entry
+/// "Properties…" always shows the item itself.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PropertiesTarget {
