@@ -2467,6 +2467,34 @@ fn toolbar_buttons_run_their_commands() {
 }
 
 #[test]
+fn losing_focus_of_the_search_field_remembers_the_search() {
+    let mut r = rig();
+    r.show_default();
+    r.harness.get_by_role(egui::accesskit::Role::TextInput).focus();
+    r.harness.run_steps(2);
+    r.harness
+        .get_by_role(egui::accesskit::Role::TextInput)
+        .type_text("quarterly");
+    r.harness.run_steps(3);
+    assert!(
+        r.harness.state().history.entries.is_empty(),
+        "typing alone does not record"
+    );
+    // Clicking a result row moves the focus out of the field.
+    r.harness.get_by_label("notes.txt").click();
+    r.harness.run_steps(3);
+    let labels: Vec<String> = r
+        .harness
+        .state()
+        .history
+        .entries
+        .iter()
+        .map(everythux_core::history::HistoryEntry::label)
+        .collect();
+    assert_eq!(labels, ["quarterly"]);
+}
+
+#[test]
 fn history_dropdown_opens_picks_and_forgets_with_shift_delete() {
     let mut r = rig();
     r.show_default();

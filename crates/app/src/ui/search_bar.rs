@@ -15,6 +15,8 @@ const AND_GUTTER: f32 = 34.0;
 #[derive(Debug, Default)]
 struct BarsOutput {
     edited: bool,
+    /// The bar whose search field lost the keyboard focus: the search goes into the history.
+    focus_lost: Option<u32>,
     add: bool,
     close: Option<u32>,
     /// The ▾ button of the first bar was clicked.
@@ -67,6 +69,9 @@ impl App {
         }
         if out.edited {
             self.resubmit_search();
+        }
+        if out.focus_lost.is_some() {
+            self.record_history();
         }
         if let Some(id) = out.close {
             self.close_search_bar(id);
@@ -155,6 +160,9 @@ fn bar_row(ui: &mut Ui, bar: &mut SearchBar, p: &RowParams, out: &mut BarsOutput
             response.request_focus();
         }
         out.edited |= response.changed();
+        if response.lost_focus() {
+            out.focus_lost = Some(bar.id);
+        }
         // Enter surrenders focus in a single-line editor; Enter is consumed earlier as "open" so
         // this only guards against the editor losing focus for other reasons.
         if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
