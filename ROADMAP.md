@@ -54,6 +54,8 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   the ones that are not there yet and also reads a whole config.json).
 - 0.14.2: a star button in the toolbar bookmarks the current search (opens the bookmarks window with the name
   filled in); fixes the Add button being clipped out of the bookmarks window.
+- 0.15.0: `<…>` groups in the query language: `<a b>|<c d>` is `(a AND b) OR (c AND d)`; groups nest and `!<…>`
+  negates one; `size:<1kb` / `size:>1mb` keep working.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
