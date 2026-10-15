@@ -1293,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-app"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1318,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-cli"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-core"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "directories",
  "globset",
@@ -1350,7 +1350,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-index"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "criterion",
  "crossbeam-channel",
@@ -1367,7 +1367,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-platform"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "mime_guess",
@@ -1382,7 +1382,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-preview"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "criterion",
  "crossbeam-channel",
@@ -1399,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "everythux-search"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "criterion",
