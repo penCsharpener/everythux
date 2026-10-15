@@ -1,6 +1,7 @@
 //! egui rendering. Each submodule adds `impl App` blocks for one part of the window.
 
 mod exclusion_ui;
+mod highlight;
 mod icons;
 mod menus;
 mod preview_pane;

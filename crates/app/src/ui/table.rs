@@ -12,6 +12,7 @@ use everythux_core::model::{EntryKind, VolumeState};
 use everythux_index::ScanMode;
 use everythux_platform::mime::Category;
 
+use super::highlight;
 use super::icons;
 use super::rename_editor::{EditorEvent, rename_editor};
 use crate::app::{App, CellEvent, ContextAction, ROW_HEIGHT};
@@ -163,6 +164,24 @@ struct TableParams<'a> {
     date_format: &'a str,
     scroll_to: Option<usize>,
     backend: &'a dyn Backend,
+    /// Query terms to highlight in the Name and Path cells.
+    highlight: &'a Highlight,
+}
+
+/// Query terms to highlight, and how to match them.
+#[derive(Debug, Default)]
+pub(crate) struct Highlight {
+    terms: Vec<String>,
+    case_sensitive: bool,
+}
+
+impl Highlight {
+    pub(crate) fn new(texts: &[String], case_sensitive: bool, regex: bool) -> Self {
+        Self {
+            terms: highlight::terms(texts, case_sensitive, regex),
+            case_sensitive,
+        }
+    }
 }
 
 fn header_cell(ui: &mut Ui, id: ColumnId, sort: SortConfig) {
@@ -193,13 +212,27 @@ fn text_cell(ui: &mut Ui, text: &str, offline: bool) {
     ui.add(egui::Label::new(rich).selectable(false).truncate());
 }
 
-fn cell_content(ui: &mut Ui, id: ColumnId, row: &CachedRow) {
+/// A Name or Path cell: query matches are drawn white and bold.
+fn match_cell(ui: &mut Ui, text: &str, offline: bool, hl: &Highlight) {
+    let matched = highlight::ranges(text, &hl.terms, hl.case_sensitive);
+    if matched.is_empty() {
+        return text_cell(ui, text, offline);
+    }
+    let base = if offline {
+        ui.visuals().weak_text_color()
+    } else {
+        ui.visuals().text_color()
+    };
+    highlight::label(ui, text, &matched, base);
+}
+
+fn cell_content(ui: &mut Ui, id: ColumnId, row: &CachedRow, hl: &Highlight) {
     match id {
         ColumnId::Name => {
             icons::icon(ui, row.category, row.offline);
-            text_cell(ui, &row.name, row.offline);
+            match_cell(ui, &row.name, row.offline, hl);
         }
-        ColumnId::Path => text_cell(ui, &row.path, row.offline),
+        ColumnId::Path => match_cell(ui, &row.path, row.offline, hl),
         ColumnId::Type => text_cell(ui, &row.kind, row.offline),
         ColumnId::Modified => text_cell(ui, &row.modified, row.offline),
         ColumnId::Size => {
@@ -412,7 +445,7 @@ fn draw_table(
                     }
                     continue;
                 }
-                let (_, resp) = row.col(|ui| cell_content(ui, col.id, cached));
+                let (_, resp) = row.col(|ui| cell_content(ui, col.id, cached, p.highlight));
                 let mods: Modifiers = resp.ctx.input(|i| i.modifiers);
                 if resp.double_clicked() {
                     out.cell_events.push((idx, col.id, CellEvent::DoubleClick(mods)));
@@ -451,6 +484,11 @@ impl App {
         let row_h = ROW_HEIGHT + ui.spacing().item_spacing.y;
         self.visible_rows = (((ui.available_height() - HEADER_HEIGHT) / row_h).floor() as usize).max(1);
 
+        let highlight = Highlight::new(
+            &self.search.texts(),
+            self.config.search.case_sensitive,
+            self.config.search.regex,
+        );
         let params = TableParams {
             view: &view,
             columns: &columns,
@@ -462,6 +500,7 @@ impl App {
             date_format: &self.config.ui.date_format,
             scroll_to: self.scroll_to_row.take(),
             backend: &*self.backend,
+            highlight: &highlight,
         };
         let out = egui::ScrollArea::horizontal()
             .auto_shrink([false, false])
