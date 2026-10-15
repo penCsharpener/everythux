@@ -2427,3 +2427,25 @@ fn history_dropdown_opens_picks_and_forgets_with_shift_delete() {
     r.harness.run_steps(3);
     assert_eq!(r.harness.state().search.texts(), ["notes"]);
 }
+
+#[test]
+fn toolbar_star_bookmarks_the_current_search() {
+    let mut r = rig();
+    r.show_default();
+    r.harness.state_mut().set_bar_text(0, "report");
+    r.harness.run_steps(2);
+    r.harness
+        .get_by_label_contains("Add the current search to the bookmarks")
+        .click();
+    r.harness.run_steps(3);
+    assert!(
+        r.harness.query_by_label("Add current search").is_some(),
+        "the bookmarks window is open"
+    );
+    assert_eq!(r.harness.state().windows.bookmarks.name, "report");
+    r.harness.run_steps(3);
+    r.harness.get_by_label("Add current search").click();
+    r.harness.run_steps(6);
+    assert_eq!(r.harness.state().config.bookmarks.len(), 1);
+    assert_eq!(r.harness.state().config.bookmarks[0].name, "report");
+}

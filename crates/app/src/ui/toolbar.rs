@@ -63,6 +63,12 @@ impl App {
                 Command::OpenConfig,
             ),
             (
+                Glyph::Star,
+                tip("Add the current search to the bookmarks…", ""),
+                None,
+                Command::AddBookmark,
+            ),
+            (
                 Glyph::Preview,
                 tip("Show preview", &describe_shortcut(b.toggle_preview)),
                 Some(self.config.ui.preview_pane.enabled),

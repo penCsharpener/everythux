@@ -340,7 +340,8 @@ impl App {
                     let edit = ui.add(
                         egui::TextEdit::singleline(&mut self.windows.bookmarks.name)
                             .hint_text("Name of the current search")
-                            .desired_width(f32::INFINITY),
+                            // Leaves room for the button on the same row.
+                            .desired_width((ui.available_width() - 150.0).max(80.0)),
                     );
                     let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if ui.button("Add current search").clicked() || enter {
@@ -375,7 +376,7 @@ impl App {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.windows.bookmarks.transfer_path)
                             .hint_text("/path/to/bookmarks.json")
-                            .desired_width(f32::INFINITY),
+                            .desired_width(ui.available_width()),
                     );
                 });
                 ui.horizontal(|ui| {

@@ -58,6 +58,8 @@ pub(crate) enum Glyph {
     QuickRescan,
     /// `{}`: the JSON config file.
     Config,
+    /// A five-pointed star: bookmark the current search.
+    Star,
     /// A window with a side pane: the preview pane.
     Preview,
 }
@@ -159,28 +161,7 @@ fn paint_glyph(ui: &Ui, rect: Rect, glyph: Glyph, color: Color32) {
             );
             line(pos2(big.left(), big.bottom()), pos2(big.right(), big.bottom()));
         }
-        Glyph::Reindex => {
-            let c = big.center();
-            let radius = big.width() * 0.5;
-            let arc = |from: f32, to: f32| {
-                let points: Vec<Pos2> = (0..=10)
-                    .map(|i| {
-                        let a = from + (to - from) * (i as f32 / 10.0);
-                        c + vec2(a.cos(), a.sin()) * radius
-                    })
-                    .collect();
-                painter.add(Shape::line(points, stroke));
-            };
-            arc(0.3, 2.9);
-            arc(3.44, 6.04);
-            for (tip, dir) in [
-                (c + vec2(2.9_f32.cos(), 2.9_f32.sin()) * radius, vec2(-1.0, -1.0)),
-                (c + vec2(6.04_f32.cos(), 6.04_f32.sin()) * radius, vec2(1.0, 1.0)),
-            ] {
-                line(tip, tip + vec2(dir.x * 3.0, 0.0));
-                line(tip, tip + vec2(0.0, dir.y * 3.0));
-            }
-        }
+        Glyph::Reindex => paint_reindex(painter, big, stroke),
         Glyph::QuickRescan => {
             // A lightning bolt.
             let p = |fx: f32, fy: f32| pos2(big.left() + big.width() * fx, big.top() + big.height() * fy);
@@ -204,6 +185,7 @@ fn paint_glyph(ui: &Ui, rect: Rect, glyph: Glyph, color: Color32) {
             painter.rect_filled(front.expand(1.0), 0.0, ui.visuals().panel_fill);
             painter.rect_stroke(front, 1.0, stroke, egui::StrokeKind::Inside);
         }
+        Glyph::Star => paint_star(painter, big, stroke),
         Glyph::Preview => {
             let frame = Rect::from_center_size(rect.center(), vec2(side * 0.62, side * 0.5));
             painter.rect_stroke(frame, 1.5, stroke, egui::StrokeKind::Inside);
@@ -211,6 +193,50 @@ fn paint_glyph(ui: &Ui, rect: Rect, glyph: Glyph, color: Color32) {
             line(pos2(x, frame.top()), pos2(x, frame.bottom()));
         }
     }
+}
+
+/// Two circular arrows.
+fn paint_reindex(painter: &egui::Painter, big: Rect, stroke: Stroke) {
+    let line = |a: Pos2, b: Pos2| {
+        painter.line_segment([a, b], stroke);
+    };
+
+    let c = big.center();
+    let radius = big.width() * 0.5;
+    let arc = |from: f32, to: f32| {
+        let points: Vec<Pos2> = (0..=10)
+            .map(|i| {
+                let a = from + (to - from) * (i as f32 / 10.0);
+                c + vec2(a.cos(), a.sin()) * radius
+            })
+            .collect();
+        painter.add(Shape::line(points, stroke));
+    };
+    arc(0.3, 2.9);
+    arc(3.44, 6.04);
+    for (tip, dir) in [
+        (c + vec2(2.9_f32.cos(), 2.9_f32.sin()) * radius, vec2(-1.0, -1.0)),
+        (c + vec2(6.04_f32.cos(), 6.04_f32.sin()) * radius, vec2(1.0, 1.0)),
+    ] {
+        line(tip, tip + vec2(dir.x * 3.0, 0.0));
+        line(tip, tip + vec2(0.0, dir.y * 3.0));
+    }
+}
+
+/// A five-pointed star outline.
+fn paint_star(painter: &egui::Painter, big: Rect, stroke: Stroke) {
+    let c = big.center();
+    let outer = big.width() * 0.55;
+    let inner = outer * 0.42;
+    let points: Vec<Pos2> = (0..10)
+        .map(|i| {
+            let radius = if i % 2 == 0 { outer } else { inner };
+            // Start at the top and go clockwise.
+            let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+            c + vec2(angle.cos(), angle.sin()) * radius
+        })
+        .collect();
+    painter.add(Shape::closed_line(points, stroke));
 }
 
 fn paint(painter: &egui::Painter, rect: Rect, category: Category, color: Color32) {
