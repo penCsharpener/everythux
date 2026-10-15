@@ -32,6 +32,8 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
 
 - 0.8.0: query matches in the Name and Path columns are drawn white and bold (plain words, phrases and
   wildcard literals; filters, negated terms and regex mode are not highlighted).
+- 0.9.0: icon toolbar under the menu bar: Match case, Match path, Regex, Reindex all, Quick rescan,
+  Open JSON config (default application) and Show preview, each with hover text and shortcut.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
