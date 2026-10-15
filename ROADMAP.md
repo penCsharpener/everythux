@@ -30,6 +30,8 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   order them (`order`: list of entry ids). Not covered: plugin-only Dolphin entries (Ark, share, git),
   Nemo actions with `Conditions=`, entry icons, and a graphical editor for the order.
 
+- 0.8.0: query matches in the Name and Path columns are drawn white and bold (plain words, phrases and
+  wildcard literals; filters, negated terms and regex mode are not highlighted).
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
