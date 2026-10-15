@@ -10,6 +10,8 @@ use crate::text_doc::TextDoc;
 
 /// Selection must rest this long before a preview is requested.
 pub(crate) const PREVIEW_DEBOUNCE: f64 = 0.1;
+/// Longest side of the full-resolution render, in pixels (also capped by the GPU texture size).
+const HIRES_MAX_DIM: usize = 8192;
 
 /// A finished preview with its uploaded textures. Dropping it frees the textures.
 pub(crate) struct PreviewShown {
@@ -20,6 +22,10 @@ pub(crate) struct PreviewShown {
     /// For text previews: the text, moved out of `content` (whose `text` is left empty) and
     /// indexed for rendering. Grows with "Show more".
     pub(crate) text: Option<TextDoc>,
+    /// The first image at (up to) full resolution, loaded once the user zooms in.
+    pub(crate) hires: Option<egui::TextureHandle>,
+    /// Set by the pane while the image is zoomed: asks for [`Self::hires`].
+    pub(crate) wants_hires: std::cell::Cell<bool>,
 }
 
 impl std::fmt::Debug for PreviewShown {
@@ -53,6 +59,8 @@ pub(crate) struct PreviewState {
     pub(crate) more_request: Option<u64>,
     /// Why the last "Show more" failed.
     pub(crate) more_error: Option<String>,
+    /// The full-resolution request in flight: path and request id.
+    pub(crate) hires_request: Option<(PathBuf, u64)>,
 }
 
 impl PreviewState {
@@ -128,6 +136,16 @@ impl App {
             self.on_more_text(result);
             return;
         }
+        if self
+            .preview
+            .hires_request
+            .as_ref()
+            .is_some_and(|(_, id)| *id == result.request)
+        {
+            self.preview.hires_request = None;
+            self.on_hires_result(&result);
+            return;
+        }
         let current = self.preview.requested.as_ref().map(|(_, id)| *id);
         if current != Some(result.request) {
             return;
@@ -167,7 +185,58 @@ impl App {
             content,
             textures,
             text,
+            hires: None,
+            wants_hires: std::cell::Cell::new(false),
         });
+        self.preview.hires_request = None;
+    }
+
+    /// Keeps the full-resolution render of the shown image (it replaces the screen-sized one while
+    /// zoomed). Dropped when the file shown has changed meanwhile.
+    fn on_hires_result(&mut self, result: &PreviewResult) {
+        let image = match &result.content {
+            PreviewContent::Image { image, .. } => image,
+            PreviewContent::Pdf { page, .. } => page,
+            _ => return,
+        };
+        let Some(color) = to_color_image(image) else {
+            return;
+        };
+        let texture = self.ctx.load_texture(
+            format!("preview-hires-{}", result.request),
+            color,
+            egui::TextureOptions::LINEAR,
+        );
+        if let Some(shown) = self.preview.shown.as_mut().filter(|s| s.path == result.path) {
+            shown.hires = Some(texture);
+        }
+    }
+
+    /// Asks for the shown image at full resolution when the pane zoomed it and none is loaded or
+    /// on its way. Bounded by the GPU's texture size.
+    pub(crate) fn drive_hires(&mut self) {
+        let Some(shown) = self.preview.shown.as_ref() else {
+            return;
+        };
+        if !shown.wants_hires.take() || shown.hires.is_some() {
+            return;
+        }
+        let path = shown.path.clone();
+        if self
+            .preview
+            .hires_request
+            .as_ref()
+            .is_some_and(|(p, _)| *p == path)
+        {
+            return;
+        }
+        let side = self.ctx.input(|i| i.max_texture_side).clamp(1, HIRES_MAX_DIM);
+        let limits = PreviewLimits {
+            max_dim: u32::try_from(side).unwrap_or(HIRES_MAX_DIM as u32),
+            ..self.preview_limits()
+        };
+        let id = self.backend.request_preview(path.clone(), limits);
+        self.preview.hires_request = Some((path, id));
     }
 
     /// Appends a "Show more" chunk to the shown text.
@@ -313,6 +382,48 @@ mod tests {
         t.pump();
         let shown = t.app.preview.shown.as_ref().expect("shown");
         assert_eq!(shown.textures.len(), 1, "texture uploaded once");
+    }
+
+    #[test]
+    fn zooming_loads_the_full_resolution_once() {
+        let mut t = TestApp::new();
+        enable(&mut t);
+        let ctx = t.app.ctx.clone();
+        t.app.selection.select_only(0);
+        t.app.now = 1.0;
+        t.app.drive_preview(&ctx);
+        t.app.now = 2.0;
+        t.app.drive_preview(&ctx);
+        let (path, id) = t.app.preview.requested.clone().expect("requested");
+        t.fake.send(BackendEvent::Preview(PreviewResult {
+            request: id,
+            path: path.clone(),
+            content: PreviewContent::Image {
+                image: rgba(4, 4),
+                original_size: Some((4000, 4000)),
+            },
+        }));
+        t.pump();
+        t.app.drive_hires();
+        assert_eq!(preview_calls(&t).len(), 1, "no zoom, no full-resolution request");
+
+        t.app.preview.shown.as_ref().expect("shown").wants_hires.set(true);
+        t.app.drive_hires();
+        t.app.preview.shown.as_ref().expect("shown").wants_hires.set(true);
+        t.app.drive_hires();
+        assert_eq!(preview_calls(&t).len(), 2, "one request while it is in flight");
+        let (_, hires_id) = t.app.preview.hires_request.clone().expect("in flight");
+        t.fake.send(BackendEvent::Preview(PreviewResult {
+            request: hires_id,
+            path,
+            content: PreviewContent::Image {
+                image: rgba(8, 8),
+                original_size: Some((4000, 4000)),
+            },
+        }));
+        t.pump();
+        assert!(t.app.preview.shown.as_ref().expect("shown").hires.is_some());
+        assert!(t.app.preview.hires_request.is_none());
     }
 
     #[test]

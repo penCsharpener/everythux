@@ -104,8 +104,6 @@ fn meta_grid(ui: &mut Ui, meta: &MediaMeta) {
 const ZOOM_RANGE: RangeInclusive<f32> = 1.0..=16.0;
 /// Factor of the − and + buttons.
 const ZOOM_STEP: f32 = 1.5;
-/// Tallest the zoomed image area gets before it scrolls, in logical pixels.
-const ZOOMED_MAX_HEIGHT: f32 = 480.0;
 
 /// `zoom` limited to [`ZOOM_RANGE`]; anything not finite means "fit".
 fn clamp_zoom(zoom: f32) -> f32 {
@@ -116,84 +114,156 @@ fn clamp_zoom(zoom: f32) -> f32 {
     }
 }
 
+/// Scroll offset that keeps the image point under `pivot` (a position inside the viewport)
+/// in place when the zoom changes from `from` to `to`.
+fn zoomed_offset(offset: Vec2, pivot: Vec2, from: f32, to: f32) -> Vec2 {
+    if from <= 0.0 {
+        return Vec2::ZERO;
+    }
+    let scaled = (offset + pivot) * (to / from) - pivot;
+    Vec2::new(scaled.x.max(0.0), scaled.y.max(0.0))
+}
+
+/// What the zoomed image remembers between frames.
+#[derive(Debug, Clone, Copy)]
+struct ZoomState {
+    zoom: f32,
+    offset: Vec2,
+}
+
+/// The −, + and Fit buttons and the percentage. Returns whether a button changed `zoom`.
+fn zoom_buttons(ui: &mut Ui, zoom: &mut f32, percent: f32) -> bool {
+    let before = *zoom;
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(*zoom > *ZOOM_RANGE.start(), egui::Button::new("−").small())
+            .on_hover_text("Zoom out (Ctrl+wheel)")
+            .clicked()
+        {
+            *zoom = clamp_zoom(*zoom / ZOOM_STEP);
+        }
+        if ui
+            .add_enabled(*zoom < *ZOOM_RANGE.end(), egui::Button::new("+").small())
+            .on_hover_text("Zoom in (Ctrl+wheel)")
+            .clicked()
+        {
+            *zoom = clamp_zoom(*zoom * ZOOM_STEP);
+        }
+        if ui
+            .add_enabled(*zoom > 1.0, egui::Button::new("Fit").small())
+            .on_hover_text("Fit to the pane (double-click)")
+            .clicked()
+        {
+            *zoom = 1.0;
+        }
+        ui.weak(format!("{percent:.0}%"));
+    });
+    (*zoom - before).abs() > f32::EPSILON
+}
+
 /// An image fitted to the pane width. `Ctrl`+wheel (or a pinch) over it, or the buttons below it,
-/// zoom in up to 16×; a zoomed image is dragged or scrolled inside a frame of fixed height so the
-/// pane never grows. Double-click or "Fit" resets. The zoom is remembered per file.
-fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize) {
-    let Some(texture) = shown.textures.get(index) else {
+/// zoom in up to 16× around the pointer; the zoomed image is dragged or scrolled inside a frame
+/// that keeps the fitted size, so the pane never grows. Double-click or "Fit" resets. The zoom is
+/// remembered per file. While zoomed, the full-resolution render is shown once it has loaded.
+fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize, original: Option<(u32, u32)>) {
+    let Some(fit_texture) = shown.textures.get(index) else {
         return;
     };
-    let fitted = fit_width(texture.size_vec2(), ui.available_width());
+    let fitted = fit_width(fit_texture.size_vec2(), ui.available_width());
     let id = egui::Id::new(("preview_zoom", &shown.path, index));
-    let mut zoom = clamp_zoom(ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(1.0));
+    let mut state = ui.data(|d| d.get_temp::<(f32, Vec2)>(id)).map_or(
+        ZoomState {
+            zoom: 1.0,
+            offset: Vec2::ZERO,
+        },
+        |(zoom, offset)| ZoomState {
+            zoom: clamp_zoom(zoom),
+            offset,
+        },
+    );
+    let before = state.zoom;
+    let zoomed = state.zoom > 1.0;
+    // The sharp render replaces the screen-sized one only while zoomed.
+    let texture = match (&shown.hires, zoomed && index == 0) {
+        (Some(hires), true) => hires,
+        _ => fit_texture,
+    };
+    if zoomed && index == 0 {
+        shown.wants_hires.set(true);
+    }
     let image = |size: Vec2| {
         egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture))
             .fit_to_exact_size(size)
             .sense(egui::Sense::click())
     };
 
-    let response = if zoom <= 1.0 {
-        ui.add(image(fitted))
-    } else {
-        let size = fitted * zoom;
-        egui::ScrollArea::both()
+    let mut viewport = None;
+    let response = if zoomed {
+        let area = egui::ScrollArea::both()
             .id_salt(id)
-            .max_height(ZOOMED_MAX_HEIGHT.min(size.y))
-            .auto_shrink([false, true])
-            .show(ui, |ui| ui.add(image(size)))
-            .inner
+            .max_height(fitted.y)
+            .min_scrolled_height(fitted.y)
+            .auto_shrink([false, false])
+            .scroll_offset(state.offset)
+            .show(ui, |ui| ui.add(image(fitted * state.zoom)));
+        state.offset = area.state.offset;
+        viewport = Some(area.inner_rect);
+        area.inner
+    } else {
+        ui.add(image(fitted))
     };
+
+    // Zoom around the pointer, or the viewport centre when it is outside.
+    let pivot_of = |rect: egui::Rect, pointer: Option<egui::Pos2>| {
+        pointer
+            .filter(|p| rect.contains(*p))
+            .unwrap_or_else(|| rect.center())
+            - rect.min
+    };
+    let pointer = ui.input(|i| i.pointer.hover_pos());
     if response.hovered() {
         let wheel = ui.input(egui::InputState::zoom_delta);
         if (wheel - 1.0).abs() > f32::EPSILON {
-            zoom = clamp_zoom(zoom * wheel);
+            state.zoom = clamp_zoom(state.zoom * wheel);
         }
     }
     if response.double_clicked() {
-        zoom = 1.0;
+        state.zoom = 1.0;
     }
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(zoom > *ZOOM_RANGE.start(), egui::Button::new("−").small())
-            .on_hover_text("Zoom out (Ctrl+wheel)")
-            .clicked()
-        {
-            zoom = clamp_zoom(zoom / ZOOM_STEP);
-        }
-        if ui
-            .add_enabled(zoom < *ZOOM_RANGE.end(), egui::Button::new("+").small())
-            .on_hover_text("Zoom in (Ctrl+wheel)")
-            .clicked()
-        {
-            zoom = clamp_zoom(zoom * ZOOM_STEP);
-        }
-        if ui
-            .add_enabled(zoom > 1.0, egui::Button::new("Fit").small())
-            .on_hover_text("Fit to the pane (double-click)")
-            .clicked()
-        {
-            zoom = 1.0;
-        }
-        let pixels = if texture.size_vec2().x > 0.0 {
-            fitted.x * zoom / texture.size_vec2().x * 100.0
+    let full_width = original.map_or(fit_texture.size_vec2().x, |(w, _)| w as f32);
+    let percent = if full_width > 0.0 {
+        fitted.x * state.zoom / full_width * 100.0
+    } else {
+        100.0
+    };
+    let mut pivot_from = pointer;
+    if zoom_buttons(ui, &mut state.zoom, percent) {
+        pivot_from = None;
+    }
+    if (state.zoom - before).abs() > f32::EPSILON {
+        state.offset = if state.zoom <= 1.0 {
+            Vec2::ZERO
         } else {
-            100.0
+            // The first zoom step starts from the unscrolled image, whose viewport is the
+            // image's own rect.
+            let rect = viewport.unwrap_or(response.rect);
+            zoomed_offset(state.offset, pivot_of(rect, pivot_from), before, state.zoom)
         };
-        ui.weak(format!("{pixels:.0}%"));
-    });
-    ui.data_mut(|d| d.insert_temp(id, zoom));
+        ui.ctx().request_repaint();
+    }
+    ui.data_mut(|d| d.insert_temp(id, (state.zoom, state.offset)));
 }
 
 fn show_content(ui: &mut Ui, shown: &PreviewShown) {
     match &shown.content {
         PreviewContent::Image { original_size, .. } => {
-            show_image(ui, shown, 0);
+            show_image(ui, shown, 0, *original_size);
             if let Some((w, h)) = original_size {
                 ui.weak(format!("{w} × {h} px"));
             }
         }
         PreviewContent::Pdf { pages, .. } => {
-            show_image(ui, shown, 0);
+            show_image(ui, shown, 0, None);
             if let Some(pages) = pages {
                 ui.weak(format!("{pages} page(s), showing page 1"));
             }
@@ -201,7 +271,7 @@ fn show_content(ui: &mut Ui, shown: &PreviewShown) {
         // Drawn by `App::text_preview` from `PreviewShown::text`.
         PreviewContent::Text { .. } => {}
         PreviewContent::Audio { meta, .. } | PreviewContent::Video { meta, .. } => {
-            show_image(ui, shown, 0);
+            show_image(ui, shown, 0, None);
             ui.add_space(4.0);
             meta_grid(ui, meta);
         }
@@ -408,6 +478,15 @@ mod tests {
             (shown_width(360.0, 100.0) - 100.0).abs() < f32::EPSILON,
             "never wider than the window"
         );
+    }
+
+    #[test]
+    fn zooming_keeps_the_point_under_the_pivot() {
+        // Pivot at the viewport centre of an unscrolled image: the image point (50, 40) stays put.
+        let off = zoomed_offset(Vec2::ZERO, Vec2::new(50.0, 40.0), 1.0, 2.0);
+        assert_eq!(off, Vec2::new(50.0, 40.0));
+        // Back to 1x returns to the origin.
+        assert_eq!(zoomed_offset(off, Vec2::new(50.0, 40.0), 2.0, 1.0), Vec2::ZERO);
     }
 
     #[test]
