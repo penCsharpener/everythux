@@ -99,6 +99,7 @@ impl App {
         self.show_windows(&ctx);
         self.sync_popups();
         self.drive_preview(&ctx);
+        self.drive_pdf_page();
         self.drive_hires();
         self.sync_window_title();
     }

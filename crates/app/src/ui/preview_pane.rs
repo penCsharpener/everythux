@@ -161,14 +161,23 @@ fn zoom_buttons(ui: &mut Ui, zoom: &mut f32, percent: f32) -> bool {
     (*zoom - before).abs() > f32::EPSILON
 }
 
+/// What the caller needs to know about the image `show_image` drew.
+struct ImageView {
+    hovered: bool,
+    zoomed: bool,
+}
+
 /// An image fitted to the pane width. `Ctrl`+wheel (or a pinch) over it, or the buttons below it,
 /// zoom in up to 16× around the pointer; the zoomed image is dragged or scrolled inside a frame
 /// that keeps the fitted size, so the pane never grows. Double-click or "Fit" resets. The zoom is
 /// remembered per file. While zoomed, the full-resolution render is shown once it has loaded.
-fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize, original: Option<(u32, u32)>) {
-    let Some(fit_texture) = shown.textures.get(index) else {
-        return;
-    };
+fn show_image(
+    ui: &mut Ui,
+    shown: &PreviewShown,
+    index: usize,
+    original: Option<(u32, u32)>,
+) -> Option<ImageView> {
+    let fit_texture = shown.textures.get(index)?;
     let fitted = fit_width(fit_texture.size_vec2(), ui.available_width());
     let id = egui::Id::new(("preview_zoom", &shown.path, index));
     let mut state = ui.data(|d| d.get_temp::<(f32, Vec2)>(id)).map_or(
@@ -252,6 +261,59 @@ fn show_image(ui: &mut Ui, shown: &PreviewShown, index: usize, original: Option<
         ui.ctx().request_repaint();
     }
     ui.data_mut(|d| d.insert_temp(id, (state.zoom, state.offset)));
+    Some(ImageView {
+        hovered: response.hovered(),
+        zoomed: state.zoom > 1.0,
+    })
+}
+
+/// "◀ Page 3 of 12 ▶": steps through the pages of a PDF. The wheel over the page also turns it
+/// while the page is not zoomed.
+fn page_nav(ui: &mut Ui, shown: &PreviewShown, pages: u32, view: Option<&ImageView>) {
+    let page = shown.page.clamp(1, pages);
+    let mut wanted = page;
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(page > 1, egui::Button::new("◀").small())
+            .on_hover_text("Previous page")
+            .clicked()
+        {
+            wanted = page - 1;
+        }
+        ui.label(format!("Page {page} of {pages}"));
+        if ui
+            .add_enabled(page < pages, egui::Button::new("▶").small())
+            .on_hover_text("Next page")
+            .clicked()
+        {
+            wanted = page + 1;
+        }
+    });
+    // One page per wheel notch; zoomed pages scroll instead.
+    if view.is_some_and(|v| v.hovered && !v.zoomed) {
+        // Raw wheel events, not the smoothed delta: one notch is one page.
+        let scroll: f32 = ui.input(|i| {
+            if i.modifiers.any() {
+                return 0.0;
+            }
+            i.raw
+                .events
+                .iter()
+                .map(|e| match e {
+                    egui::Event::MouseWheel { delta, .. } => delta.y,
+                    _ => 0.0,
+                })
+                .sum()
+        });
+        if scroll < 0.0 {
+            wanted = (page + 1).min(pages);
+        } else if scroll > 0.0 {
+            wanted = page.saturating_sub(1).max(1);
+        }
+    }
+    if wanted != page {
+        shown.want_page.set(Some(wanted));
+    }
 }
 
 fn show_content(ui: &mut Ui, shown: &PreviewShown) {
@@ -263,9 +325,9 @@ fn show_content(ui: &mut Ui, shown: &PreviewShown) {
             }
         }
         PreviewContent::Pdf { pages, .. } => {
-            show_image(ui, shown, 0, None);
-            if let Some(pages) = pages {
-                ui.weak(format!("{pages} page(s), showing page 1"));
+            let view = show_image(ui, shown, 0, None);
+            if let Some(pages) = pages.filter(|&n| n > 1) {
+                page_nav(ui, shown, pages, view.as_ref());
             }
         }
         // Drawn by `App::text_preview` from `PreviewShown::text`.

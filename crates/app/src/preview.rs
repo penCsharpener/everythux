@@ -26,6 +26,10 @@ pub(crate) struct PreviewShown {
     pub(crate) hires: Option<egui::TextureHandle>,
     /// Set by the pane while the image is zoomed: asks for [`Self::hires`].
     pub(crate) wants_hires: std::cell::Cell<bool>,
+    /// The PDF page shown, counting from 1.
+    pub(crate) page: u32,
+    /// Set by the pane: the PDF page the user asked for.
+    pub(crate) want_page: std::cell::Cell<Option<u32>>,
 }
 
 impl std::fmt::Debug for PreviewShown {
@@ -61,6 +65,8 @@ pub(crate) struct PreviewState {
     pub(crate) more_error: Option<String>,
     /// The full-resolution request in flight: path and request id.
     pub(crate) hires_request: Option<(PathBuf, u64)>,
+    /// The PDF page asked for, per file; forgotten when another file is selected.
+    pub(crate) page: Option<(PathBuf, u32)>,
 }
 
 impl PreviewState {
@@ -90,8 +96,15 @@ fn to_color_image(image: &ImageData) -> Option<egui::ColorImage> {
 impl App {
     /// The preview limits derived from the config.
     pub(crate) fn preview_limits(&self) -> PreviewLimits {
+        let page = self
+            .preview
+            .page
+            .as_ref()
+            .filter(|(p, _)| Some(p) == self.preview.wanted.as_ref())
+            .map_or(1, |(_, page)| *page);
         PreviewLimits {
             max_file_size: self.config.ui.preview_pane.max_file_size,
+            page,
             ..PreviewLimits::default()
         }
     }
@@ -113,6 +126,7 @@ impl App {
                 self.preview.requested = None;
             }
             self.preview.wanted = wanted;
+            self.preview.page = None;
         }
         let Some(path) = self.preview.wanted.clone() else {
             return;
@@ -166,6 +180,12 @@ impl App {
             )),
             _ => None,
         };
+        let page = self
+            .preview
+            .page
+            .as_ref()
+            .filter(|(p, _)| *p == result.path)
+            .map_or(1, |(_, page)| *page);
         self.preview.more_request = None;
         self.preview.more_error = None;
         let textures = images_of(&content)
@@ -187,6 +207,8 @@ impl App {
             text,
             hires: None,
             wants_hires: std::cell::Cell::new(false),
+            page,
+            want_page: std::cell::Cell::new(None),
         });
         self.preview.hires_request = None;
     }
@@ -237,6 +259,29 @@ impl App {
         };
         let id = self.backend.request_preview(path.clone(), limits);
         self.preview.hires_request = Some((path, id));
+    }
+
+    /// Loads the PDF page the pane asked for. The page on screen stays until the new one arrives.
+    pub(crate) fn drive_pdf_page(&mut self) {
+        let Some(shown) = self.preview.shown.as_ref() else {
+            return;
+        };
+        let PreviewContent::Pdf { pages, .. } = &shown.content else {
+            return;
+        };
+        let Some(wanted) = shown.want_page.take() else {
+            return;
+        };
+        let last = pages.unwrap_or(1).max(1);
+        let wanted = wanted.clamp(1, last);
+        if wanted == shown.page || shown.path.as_os_str().is_empty() {
+            return;
+        }
+        let path = shown.path.clone();
+        self.preview.page = Some((path.clone(), wanted));
+        let id = self.backend.request_preview(path.clone(), self.preview_limits());
+        self.preview.requested = Some((path, id));
+        self.preview.hires_request = None;
     }
 
     /// Appends a "Show more" chunk to the shown text.
@@ -424,6 +469,61 @@ mod tests {
         t.pump();
         assert!(t.app.preview.shown.as_ref().expect("shown").hires.is_some());
         assert!(t.app.preview.hires_request.is_none());
+    }
+
+    #[test]
+    fn pdf_pages_are_requested_one_at_a_time_and_clamped() {
+        let mut t = TestApp::new();
+        enable(&mut t);
+        let ctx = t.app.ctx.clone();
+        t.app.selection.select_only(0);
+        t.app.now = 1.0;
+        t.app.drive_preview(&ctx);
+        t.app.now = 2.0;
+        t.app.drive_preview(&ctx);
+        let (path, id) = t.app.preview.requested.clone().expect("requested");
+        t.fake.send(BackendEvent::Preview(PreviewResult {
+            request: id,
+            path: path.clone(),
+            content: PreviewContent::Pdf {
+                page: rgba(4, 4),
+                pages: Some(3),
+            },
+        }));
+        t.pump();
+        assert_eq!(t.app.preview.shown.as_ref().expect("shown").page, 1);
+
+        t.app
+            .preview
+            .shown
+            .as_ref()
+            .expect("shown")
+            .want_page
+            .set(Some(2));
+        t.app.drive_pdf_page();
+        assert_eq!(preview_calls(&t).len(), 2);
+        assert_eq!(t.app.preview_limits().page, 2);
+        let (_, id) = t.app.preview.requested.clone().expect("requested");
+        t.fake.send(BackendEvent::Preview(PreviewResult {
+            request: id,
+            path,
+            content: PreviewContent::Pdf {
+                page: rgba(4, 4),
+                pages: Some(3),
+            },
+        }));
+        t.pump();
+        assert_eq!(t.app.preview.shown.as_ref().expect("shown").page, 2);
+
+        t.app
+            .preview
+            .shown
+            .as_ref()
+            .expect("shown")
+            .want_page
+            .set(Some(99));
+        t.app.drive_pdf_page();
+        assert_eq!(t.app.preview_limits().page, 3, "clamped to the last page");
     }
 
     #[test]

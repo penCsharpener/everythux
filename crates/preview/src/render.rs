@@ -163,7 +163,7 @@ fn pdf(
     env: &Env,
     cancel: &Cancel,
 ) -> Result<PreviewContent, PreviewError> {
-    crate::pdf::render(path, limits.max_dim, &env.tools, cancel)
+    crate::pdf::render(path, limits.max_dim, limits.page, &env.tools, cancel)
 }
 
 #[cfg(not(feature = "pdf"))]

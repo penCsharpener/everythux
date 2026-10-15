@@ -13,10 +13,11 @@ use crate::{PreviewContent, images};
 const HINT: &str = "Install poppler-utils for PDF previews";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Renders page 1 of `path` to fit `max_dim × max_dim`.
+/// Renders `page` (from 1) of `path` to fit `max_dim × max_dim`.
 pub(crate) fn render(
     path: &Path,
     max_dim: u32,
+    page: u32,
     tools: &Tools,
     cancel: &Cancel,
 ) -> Result<PreviewContent, PreviewError> {
@@ -26,6 +27,7 @@ pub(crate) fn render(
             hint: HINT,
         });
     };
+    let page = page.max(1);
     let pdfinfo = tools.locate("pdfinfo");
     let abs = std::path::absolute(path)?;
 
@@ -34,9 +36,9 @@ pub(crate) fn render(
         OsString::from("-png"),
         OsString::from("-singlefile"),
         OsString::from("-f"),
-        OsString::from("1"),
+        OsString::from(page.to_string()),
         OsString::from("-l"),
-        OsString::from("1"),
+        OsString::from(page.to_string()),
         OsString::from("-scale-to"),
         OsString::from(max_dim.to_string()),
         abs.clone().into_os_string(),
@@ -103,7 +105,7 @@ mod tests {
     #[test]
     fn missing_pdftoppm_reports_install_hint() {
         let tools = Tools::with_path("/nonexistent-dir");
-        let err = render(Path::new("/x.pdf"), 100, &tools, &Cancel::never()).expect_err("no tool");
+        let err = render(Path::new("/x.pdf"), 100, 1, &tools, &Cancel::never()).expect_err("no tool");
         assert_eq!(err.hint(), HINT);
     }
 
@@ -118,7 +120,7 @@ mod tests {
         let file = tmp.path().join("hello.pdf");
         std::fs::write(&file, testutil::MINIMAL_PDF).expect("write");
         let PreviewContent::Pdf { page, pages } =
-            render(&file, 300, &tools, &Cancel::never()).expect("render")
+            render(&file, 300, 1, &tools, &Cancel::never()).expect("render")
         else {
             panic!("expected a PDF preview");
         };
@@ -143,6 +145,6 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let file = tmp.path().join("bad.pdf");
         std::fs::write(&file, b"not a pdf").expect("write");
-        assert!(render(&file, 100, &tools, &Cancel::never()).is_err());
+        assert!(render(&file, 100, 1, &tools, &Cancel::never()).is_err());
     }
 }

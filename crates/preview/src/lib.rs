@@ -159,6 +159,8 @@ pub struct PreviewLimits {
     pub max_file_size: u64,
     /// Images are downscaled to fit `max_dim × max_dim`.
     pub max_dim: u32,
+    /// Page of a PDF to render, counting from 1 (0 is treated as 1). Part of the cache key.
+    pub page: u32,
 }
 
 impl Default for PreviewLimits {
@@ -166,6 +168,7 @@ impl Default for PreviewLimits {
         Self {
             max_file_size: 512 * 1024 * 1024,
             max_dim: 768,
+            page: 1,
         }
     }
 }
