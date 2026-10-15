@@ -48,6 +48,8 @@ pub(crate) enum Glyph {
     MatchPath,
     /// `.*`: regular expressions.
     Regex,
+    /// Two overlapping pages: duplicate files.
+    Duplicates,
     /// Circular arrows: rebuild the whole index.
     Reindex,
     /// A single arrow with a bar: rescan the changed folders.
@@ -187,6 +189,13 @@ fn paint_glyph(ui: &Ui, rect: Rect, glyph: Glyph, color: Color32) {
                 ],
                 stroke,
             ));
+        }
+        Glyph::Duplicates => {
+            let back = Rect::from_center_size(rect.center() + vec2(1.5, -1.5), Vec2::splat(side * 0.42));
+            let front = Rect::from_center_size(rect.center() + vec2(-1.5, 1.5), Vec2::splat(side * 0.42));
+            painter.rect_stroke(back, 1.0, stroke, egui::StrokeKind::Inside);
+            painter.rect_filled(front.expand(1.0), 0.0, ui.visuals().panel_fill);
+            painter.rect_stroke(front, 1.0, stroke, egui::StrokeKind::Inside);
         }
         Glyph::Preview => {
             let frame = Rect::from_center_size(rect.center(), vec2(side * 0.62, side * 0.5));

@@ -70,6 +70,14 @@ impl App {
             Command::ToggleMatchPath,
         );
         toggle(ui, "Regex", "", s.regex, commands, Command::ToggleRegex);
+        toggle(
+            ui,
+            "Show only duplicates",
+            "",
+            self.duplicates_only,
+            commands,
+            Command::ToggleDuplicates,
+        );
         ui.separator();
         item(
             ui,

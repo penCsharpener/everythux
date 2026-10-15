@@ -34,6 +34,8 @@ pub(crate) enum Command {
     /// View → Context menu → Restore hidden entries.
     RestoreHiddenContextEntries,
     FocusSearch,
+    /// Toolbar / Search → Show only duplicates.
+    ToggleDuplicates,
     /// Toolbar: open the JSON config file in the default application.
     OpenConfig,
     ToggleMatchPath,
@@ -113,6 +115,7 @@ impl App {
                 self.backend
                     .platform(crate::backend::PlatformAction::OpenDefault(path));
             }
+            Command::ToggleDuplicates => self.toggle_duplicates_only(),
             Command::FocusSearch => self.search.focus_bar = Some(FIRST_BAR),
             Command::ToggleMatchPath => self.toggle_match_path(),
             Command::ToggleCaseSensitive => self.toggle_case_sensitive(),

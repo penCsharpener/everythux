@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod duplicates;
 pub mod engine;
 mod matcher;
 pub mod query;

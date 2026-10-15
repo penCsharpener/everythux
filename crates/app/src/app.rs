@@ -140,6 +140,9 @@ pub(crate) struct App {
     pub(crate) pointer: Option<Pos2>,
     /// Set when the app asked the viewport to close.
     pub(crate) quit_requested: bool,
+    /// Show only duplicate files (same name and size) among the matches. Not persisted: a list that
+    /// silently starts filtered would be confusing.
+    pub(crate) duplicates_only: bool,
 }
 
 impl std::fmt::Debug for App {
@@ -197,6 +200,7 @@ impl App {
             now: 0.0,
             pointer: None,
             quit_requested: false,
+            duplicates_only: false,
         };
         app.apply_theme();
         app.backend.load_actions();

@@ -39,6 +39,12 @@ impl App {
                 Command::ToggleRegex,
             ),
             (
+                Glyph::Duplicates,
+                tip("Show only duplicates (same name and size)", ""),
+                Some(self.duplicates_only),
+                Command::ToggleDuplicates,
+            ),
+            (
                 Glyph::Reindex,
                 tip("Reindex all", &describe_shortcut(b.reindex_all)),
                 None,
@@ -67,7 +73,7 @@ impl App {
         ui.horizontal(|ui| {
             for (i, (glyph, label, state, command)) in buttons.into_iter().enumerate() {
                 // Separators: switches | index actions | config and preview.
-                if i == 3 || i == 5 {
+                if i == 4 || i == 6 {
                     ui.separator();
                 }
                 let response = icon_button(ui, glyph, &label, true, state.unwrap_or(false));

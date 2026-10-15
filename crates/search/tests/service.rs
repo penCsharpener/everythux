@@ -29,6 +29,7 @@ fn request(text: &str) -> SearchRequest {
         options: QueryOptions::default(),
         sort: Sort::default(),
         limit: 0,
+        duplicates_only: false,
     }
 }
 

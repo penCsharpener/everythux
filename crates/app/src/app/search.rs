@@ -27,6 +27,7 @@ impl App {
                 ascending: sort.ascending,
             },
             limit: self.config.search.max_results,
+            duplicates_only: self.duplicates_only,
         }
     }
 

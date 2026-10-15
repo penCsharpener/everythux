@@ -15,6 +15,7 @@ use crossbeam_channel::{Receiver, Sender};
 use everythux_core::ids::EntryId;
 use everythux_core::snapshot::IndexSnapshot;
 
+use crate::duplicates::retain_duplicates;
 use crate::engine::{SearchIndex, Sort};
 use crate::query::{QueryOptions, parse_many};
 
@@ -31,6 +32,9 @@ pub struct SearchRequest {
     pub sort: Sort,
     /// Result cap (0 = unlimited).
     pub limit: usize,
+    /// Keep only files that share their name and size with another result
+    /// ([`crate::duplicates::retain_duplicates`]). The cap applies after this filter.
+    pub duplicates_only: bool,
 }
 
 /// Results of one request.
@@ -261,7 +265,16 @@ impl Worker {
                 self.shared.generation.load(Ordering::Relaxed) != generation
                     || self.shared.closed.load(Ordering::Relaxed)
             };
-            self.index.search(&query, request.sort, request.limit, &cancelled)
+            if !request.duplicates_only {
+                return self.index.search(&query, request.sort, request.limit, &cancelled);
+            }
+            // The cap must apply to the duplicates, not to the matches they are picked from.
+            let ids = self.index.search(&query, request.sort, 0, &cancelled)?;
+            let mut ids = retain_duplicates(self.index.snapshot(), ids);
+            if request.limit > 0 {
+                ids.truncate(request.limit);
+            }
+            Some(ids)
         });
         let results = match outcome {
             // Superseded: the newer request is already queued.
@@ -306,6 +319,7 @@ mod tests {
             options: QueryOptions::default(),
             sort: Sort::default(),
             limit: 0,
+            duplicates_only: false,
         }
     }
 

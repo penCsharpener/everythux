@@ -94,6 +94,11 @@ impl App {
         self.resubmit_search();
     }
 
+    pub(crate) fn toggle_duplicates_only(&mut self) {
+        self.duplicates_only = !self.duplicates_only;
+        self.resubmit_search();
+    }
+
     pub(crate) fn toggle_preview_pane(&mut self) {
         self.config.ui.preview_pane.enabled = !self.config.ui.preview_pane.enabled;
         if !self.config.ui.preview_pane.enabled {
@@ -159,6 +164,16 @@ mod tests {
     use crate::app::tests::TestApp;
 
     use super::*;
+
+    #[test]
+    fn duplicates_toggle_resubmits_the_search_and_is_not_saved() {
+        let mut t = TestApp::new();
+        t.app.toggle_duplicates_only();
+        let last = t.fake.searches().last().cloned().expect("search");
+        assert!(last.duplicates_only);
+        t.app.toggle_duplicates_only();
+        assert!(!t.fake.searches().last().expect("search").duplicates_only);
+    }
 
     #[test]
     fn invalid_rules_are_not_sent_to_the_indexer() {
