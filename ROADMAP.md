@@ -49,7 +49,9 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   first; Enter/click runs a search, Shift+Delete forgets it. A search counts as used when a result is opened.
 - 0.14.0: **bookmarked searches** (Bookmarks menu, `bookmarks` in config.json): a name plus the bar texts and the
   match case / path / regex switches; run from the menu, managed in a small window (add, rename, search,
-  delete). Not covered yet: sort order and filters per bookmark, reordering, import/export.
+  delete). Not covered yet: sort order and filters per bookmark, reordering.
+- 0.14.1: bookmarks can be imported from and exported to a JSON file (bookmarks window; import adds only
+  the ones that are not there yet and also reads a whole config.json).
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
