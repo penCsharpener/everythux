@@ -34,6 +34,8 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   wildcard literals; filters, negated terms and regex mode are not highlighted).
 - 0.9.0: icon toolbar under the menu bar: Match case, Match path, Regex, Reindex all, Quick rescan,
   Open JSON config (default application) and Show preview, each with hover text and shortcut.
+- 0.10.0: **Show only duplicates** (toolbar button and Search menu): keeps the files that share name and size
+  with another match, in the current sort order; the result cap applies after the filter. Not persisted.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
