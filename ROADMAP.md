@@ -52,6 +52,8 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   delete). Not covered yet: sort order and filters per bookmark, reordering.
 - 0.14.1: bookmarks can be imported from and exported to a JSON file (bookmarks window; import adds only
   the ones that are not there yet and also reads a whole config.json).
+- 0.14.2: a star button in the toolbar bookmarks the current search (opens the bookmarks window with the name
+  filled in); fixes the Add button being clipped out of the bookmarks window.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
