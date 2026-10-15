@@ -33,6 +33,7 @@ impl App {
             });
             ui.menu_button("Search", |ui| self.search_menu(ui, &mut commands));
             ui.menu_button("Index", |ui| self.index_menu(ui, &mut commands));
+            ui.menu_button("Bookmarks", |ui| self.bookmarks_menu(ui, &mut commands));
             ui.menu_button("View", |ui| self.view_menu(ui, &mut commands));
             ui.menu_button("Help", |ui| {
                 item(
@@ -86,6 +87,24 @@ impl App {
             commands,
             Command::FocusSearch,
         );
+    }
+
+    fn bookmarks_menu(&self, ui: &mut Ui, commands: &mut Vec<Command>) {
+        item(ui, "Add current search…", "", commands, Command::AddBookmark);
+        item(ui, "Organize bookmarks…", "", commands, Command::OpenBookmarks);
+        if !self.config.bookmarks.is_empty() {
+            ui.separator();
+        }
+        for (i, bookmark) in self.config.bookmarks.iter().enumerate() {
+            if ui
+                .button(&bookmark.name)
+                .on_hover_text(bookmark.texts.join(" AND "))
+                .clicked()
+            {
+                commands.push(Command::RunBookmark(i));
+                ui.close();
+            }
+        }
     }
 
     fn index_menu(&self, ui: &mut Ui, commands: &mut Vec<Command>) {

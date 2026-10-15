@@ -59,6 +59,24 @@ pub struct Config {
     pub indexer: IndexerConfig,
     /// Search defaults.
     pub search: SearchConfig,
+    /// Bookmarked searches, in menu order.
+    pub bookmarks: Vec<Bookmark>,
+}
+
+/// A bookmarked search: a name, the text of each search bar and the switches it was saved with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Bookmark {
+    /// Menu label.
+    pub name: String,
+    /// The text of each search bar, top to bottom.
+    pub texts: Vec<String>,
+    /// Match case.
+    pub case_sensitive: bool,
+    /// Match path.
+    pub match_path: bool,
+    /// Regular expression.
+    pub regex: bool,
 }
 
 impl Default for Config {
@@ -71,6 +89,7 @@ impl Default for Config {
             keybindings: Keybindings::default(),
             indexer: IndexerConfig::default(),
             search: SearchConfig::default(),
+            bookmarks: Vec::new(),
         }
     }
 }

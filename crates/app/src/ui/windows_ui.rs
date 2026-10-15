@@ -43,6 +43,7 @@ impl App {
         self.shortcuts_window(ctx);
         self.about_window(ctx);
         self.preview_width_window(ctx);
+        self.bookmarks_window(ctx);
     }
 
     fn confirm_reindex_modal(&mut self, ctx: &Context) {
@@ -316,6 +317,72 @@ impl App {
                 ui.weak("All bindings can be overridden in config.json under “keybindings”.");
             });
         self.windows.shortcuts = open;
+    }
+
+    fn bookmarks_window(&mut self, ctx: &Context) {
+        if !self.windows.bookmarks.open {
+            return;
+        }
+        let mut open = true;
+        let mut add = false;
+        let mut delete = None;
+        let mut run = None;
+        let mut renamed = false;
+        egui::Window::new("Bookmarks")
+            .id(egui::Id::new("everythux_bookmarks"))
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut self.windows.bookmarks.name)
+                            .hint_text("Name of the current search")
+                            .desired_width(f32::INFINITY),
+                    );
+                    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if ui.button("Add current search").clicked() || enter {
+                        add = true;
+                    }
+                });
+                ui.separator();
+                if self.config.bookmarks.is_empty() {
+                    ui.weak("No bookmarks yet");
+                }
+                for (i, bookmark) in self.config.bookmarks.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        renamed |= ui
+                            .add(egui::TextEdit::singleline(&mut bookmark.name).desired_width(140.0))
+                            .changed();
+                        ui.add(
+                            egui::Label::new(RichText::new(bookmark.texts.join(" AND ")).weak()).truncate(),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Delete").clicked() {
+                                delete = Some(i);
+                            }
+                            if ui.button("Search").clicked() {
+                                run = Some(i);
+                            }
+                        });
+                    });
+                }
+            });
+        if add {
+            let name = std::mem::take(&mut self.windows.bookmarks.name);
+            self.add_bookmark(&name);
+        }
+        if renamed {
+            self.config_changed();
+        }
+        if let Some(i) = delete {
+            self.delete_bookmark(i);
+        }
+        if let Some(i) = run {
+            self.run_bookmark(i);
+        }
+        self.windows.bookmarks.open = open;
     }
 
     fn about_window(&mut self, ctx: &Context) {

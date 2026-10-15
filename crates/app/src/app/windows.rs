@@ -15,6 +15,7 @@ impl App {
             PopupId::Shortcuts => w.shortcuts,
             PopupId::About => w.about,
             PopupId::PreviewWidth => self.preview.width_window,
+            PopupId::Bookmarks => w.bookmarks.open,
         }
     }
 
@@ -35,6 +36,7 @@ impl App {
             PopupId::Shortcuts => self.windows.shortcuts = false,
             PopupId::About => self.windows.about = false,
             PopupId::PreviewWidth => self.preview.width_window = false,
+            PopupId::Bookmarks => self.windows.bookmarks.open = false,
         }
         self.windows.order.retain(|p| *p != id);
     }

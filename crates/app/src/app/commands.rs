@@ -34,6 +34,12 @@ pub(crate) enum Command {
     /// View → Context menu → Restore hidden entries.
     RestoreHiddenContextEntries,
     FocusSearch,
+    /// Bookmarks → Add current search…: opens the bookmarks window with a name prefilled.
+    AddBookmark,
+    /// Bookmarks → Organize bookmarks….
+    OpenBookmarks,
+    /// Bookmarks → a bookmark: run it.
+    RunBookmark(usize),
     /// Toolbar / Search → Show only duplicates.
     ToggleDuplicates,
     /// Toolbar: open the JSON config file in the default application.
@@ -129,6 +135,9 @@ impl App {
             Command::ShowShortcuts => {
                 self.windows.shortcuts = true;
                 self.open_popup(PopupId::Shortcuts);
+            }
+            Command::AddBookmark | Command::OpenBookmarks | Command::RunBookmark(_) => {
+                self.bookmark_command(&command);
             }
             Command::ShowAbout => {
                 self.windows.about = true;

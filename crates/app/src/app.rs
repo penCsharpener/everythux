@@ -5,6 +5,7 @@
 //! The egui rendering lives in `crate::ui`; the logic in the submodules here is free of widgets and
 //! is exercised directly by the tests.
 
+mod bookmarks;
 mod commands;
 mod context_menu;
 mod events;
@@ -67,6 +68,14 @@ pub(crate) enum PopupId {
     Shortcuts,
     About,
     PreviewWidth,
+    Bookmarks,
+}
+
+/// The bookmarks window: whether it is open and the name typed for the next bookmark.
+#[derive(Debug, Default)]
+pub(crate) struct BookmarksWindow {
+    pub(crate) open: bool,
+    pub(crate) name: String,
 }
 
 /// All secondary windows. `order` is the z-order, topmost last.
@@ -79,6 +88,7 @@ pub(crate) struct Windows {
     pub(crate) properties: Vec<PropertiesWindow>,
     pub(crate) shortcuts: bool,
     pub(crate) about: bool,
+    pub(crate) bookmarks: BookmarksWindow,
     pub(crate) order: Vec<PopupId>,
     pub(crate) next_id: u64,
 }
