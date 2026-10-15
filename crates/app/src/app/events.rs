@@ -44,6 +44,7 @@ impl App {
                 result,
             } => self.on_renamed(&from, &new_name, undo, result),
             BackendEvent::Trashed(results) => self.on_trashed(&results),
+            BackendEvent::Pasted { dest, cut, results } => self.on_pasted(&dest, cut, results),
             BackendEvent::Actions(catalog) => self.actions = catalog,
             BackendEvent::Devices(result) => self.on_devices(result),
             BackendEvent::Mounted { object_path, result } => self.on_mounted(&object_path, result),
@@ -100,9 +101,19 @@ impl App {
                 );
             }
             // Renames and trashing report through their own events.
-            (PlatformAction::Rename { .. } | PlatformAction::Trash(_), Ok(_)) => {}
+            (
+                PlatformAction::Rename { .. } | PlatformAction::Trash(_) | PlatformAction::Paste { .. },
+                Ok(_),
+            ) => {}
             (PlatformAction::Launch { launcher, .. }, Ok(_)) => {
                 self.toast(format!("Started {}", launcher.name), ToastKind::Info);
+            }
+            (PlatformAction::CutFiles(paths), Ok(_)) => {
+                let text = match paths.as_slice() {
+                    [_] => "Cut the file: paste it into a folder to move it".to_owned(),
+                    many => format!("Cut {} files: paste them into a folder to move them", many.len()),
+                };
+                self.toast(text, ToastKind::Info);
             }
             (PlatformAction::CopyFiles(paths), Ok(_)) => {
                 let text = match paths.as_slice() {
@@ -117,6 +128,64 @@ impl App {
                     ToastKind::Info,
                 );
             }
+        }
+    }
+
+    /// Outcome of "Paste here": a summary toast, and a quick rescan of the target folder (and of
+    /// the folders a move left) so the list shows the change.
+    fn on_pasted(
+        &mut self,
+        dest: &std::path::Path,
+        cut: bool,
+        results: Result<Vec<crate::backend::PasteResult>, String>,
+    ) {
+        let results = match results {
+            Ok(r) if !r.is_empty() => r,
+            Ok(_) => {
+                self.toast("Nothing to paste: no files on the clipboard", ToastKind::Info);
+                return;
+            }
+            Err(error) => {
+                self.toast(format!("Cannot paste: {error}"), ToastKind::Error);
+                return;
+            }
+        };
+        let done = results.iter().filter(|(_, r)| r.is_ok()).count();
+        let verb = if cut { "Moved" } else { "Pasted" };
+        let folder = dest.file_name().map_or_else(
+            || dest.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        if let Some((path, Err(error))) = results.iter().find(|(_, r)| r.is_err()) {
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            self.toast(
+                format!(
+                    "{verb} {done} of {} into {folder}; {name}: {error}",
+                    results.len()
+                ),
+                ToastKind::Error,
+            );
+        } else {
+            self.toast(format!("{verb} {done} item(s) into {folder}"), ToastKind::Info);
+        }
+        let mut folders = vec![dest.to_path_buf()];
+        if cut {
+            folders.extend(
+                results
+                    .iter()
+                    .filter(|(_, r)| r.is_ok())
+                    .filter_map(|(p, _)| p.parent().map(std::path::Path::to_path_buf)),
+            );
+        }
+        folders.sort();
+        folders.dedup();
+        for path in folders {
+            self.backend.submit_job(everythux_index::Job::RescanPath {
+                path,
+                mode: everythux_index::ScanMode::Quick,
+            });
         }
     }
 

@@ -242,7 +242,10 @@ impl Backend for FakeBackend {
             s.calls.push(Call::Platform(action.clone()));
             s.properties_unsupported
         };
-        if matches!(action, PlatformAction::Rename { .. } | PlatformAction::Trash(_)) {
+        if matches!(
+            action,
+            PlatformAction::Rename { .. } | PlatformAction::Trash(_) | PlatformAction::Paste { .. }
+        ) {
             // These answer with their own events, which the test injects.
             return;
         }
@@ -251,7 +254,7 @@ impl Backend for FakeBackend {
         } else {
             Ok(match action {
                 PlatformAction::Launch { .. } => Method::Launched,
-                PlatformAction::CopyFiles(_) => Method::Clipboard,
+                PlatformAction::CopyFiles(_) | PlatformAction::CutFiles(_) => Method::Clipboard,
                 _ => Method::FileManager1,
             })
         };

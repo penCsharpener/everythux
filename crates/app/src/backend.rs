@@ -29,6 +29,9 @@ use everythux_search::{SearchRequest, SearchResults};
 
 use crate::model::{PropTarget, PropertiesInfo};
 
+/// Per source of a paste: its new path, or why it failed.
+pub(crate) type PasteResult = (PathBuf, Result<PathBuf, String>);
+
 /// Desktop actions executed on the platform worker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlatformAction {
@@ -42,6 +45,11 @@ pub(crate) enum PlatformAction {
     Launch { launcher: Launcher, paths: Vec<PathBuf> },
     /// Put these files on the clipboard as a file list (paste in a file manager).
     CopyFiles(Vec<PathBuf>),
+    /// Put these files on the clipboard as a *cut* list: pasting moves them.
+    CutFiles(Vec<PathBuf>),
+    /// Paste the files on the clipboard into the folder `dest` (the outcome arrives as
+    /// [`BackendEvent::Pasted`], not as [`BackendEvent::Platform`]).
+    Paste { dest: PathBuf },
     /// Move these to the trash (the outcome arrives as [`BackendEvent::Trashed`], not as
     /// [`BackendEvent::Platform`]).
     Trash(Vec<PathBuf>),
@@ -67,6 +75,8 @@ impl PlatformAction {
                 many => format!("Run {} on {} items", launcher.name, many.len()),
             },
             Self::CopyFiles(paths) => format!("Copy {} file(s) to the clipboard", paths.len()),
+            Self::CutFiles(paths) => format!("Cut {} file(s) to the clipboard", paths.len()),
+            Self::Paste { dest } => format!("Paste into {}", dest.display()),
             Self::Trash(paths) => format!("Move {} item(s) to the trash", paths.len()),
             Self::Rename { from, new_name, .. } => {
                 format!("Rename {} to {}", from.display(), new_name.to_string_lossy())
@@ -127,6 +137,13 @@ pub(crate) enum BackendEvent {
         new_name: OsString,
         undo: bool,
         result: Result<PathBuf, String>,
+    },
+    /// Outcome of [`PlatformAction::Paste`]: per source its new path or the reason it failed, or
+    /// why the clipboard could not be read.
+    Pasted {
+        dest: PathBuf,
+        cut: bool,
+        results: Result<Vec<PasteResult>, String>,
     },
     /// Outcome of [`PlatformAction::Trash`], one result per path.
     Trashed(Vec<(PathBuf, Result<(), String>)>),

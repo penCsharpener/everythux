@@ -2255,6 +2255,55 @@ mod context_menu {
     }
 
     #[test]
+    fn cut_and_paste_here_on_a_folder() {
+        let mut r = rig();
+        let ids = [r.fixture.docs_entry, r.fixture.notes];
+        r.show(&ids);
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        assert!(
+            r.harness.query_by_label("Paste here").is_none(),
+            "only folders paste"
+        );
+        r.harness.get_by_label("Cut").click();
+        r.harness.run_steps(3);
+        r.harness.get_by_label("docs").click_secondary();
+        r.harness.run_steps(4);
+        r.harness.get_by_label("Paste here").click();
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [
+                PlatformAction::CutFiles(vec![NOTES.into()]),
+                PlatformAction::Paste {
+                    dest: "/home/me/docs".into()
+                },
+            ]
+        );
+        r.fake.clear();
+        r.fake.send(BackendEvent::Pasted {
+            dest: "/home/me/docs".into(),
+            cut: true,
+            results: Ok(vec![(
+                "/home/me/proj/a.txt".into(),
+                Ok("/home/me/docs/a.txt".into()),
+            )]),
+        });
+        r.harness.run_steps(2);
+        assert!(
+            r.harness
+                .state()
+                .toasts
+                .iter()
+                .any(|t| t.text.contains("Moved 1 item(s) into docs"))
+        );
+        assert!(r.fake.jobs().iter().any(|j| matches!(
+            j,
+            Job::RescanPath { path, .. } if path == &PathBuf::from("/home/me/docs")
+        )));
+    }
+
+    #[test]
     fn trash_outcome_toasts_and_rescans_the_folder() {
         let mut r = rig();
         r.show_default();

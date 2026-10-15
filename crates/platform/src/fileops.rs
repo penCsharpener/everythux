@@ -116,6 +116,136 @@ pub fn rename_in_place(path: &Path, new_name: &OsStr) -> Result<PathBuf, RenameE
     }
 }
 
+/// Outcome of pasting one source: its new path, or why it failed.
+pub type PasteResult = (PathBuf, Result<PathBuf, String>);
+
+/// Copies (or, with `cut`, moves) every path of `sources` into the folder `dest`.
+///
+/// Nothing is ever overwritten: a name that is taken gets ` (copy)`, ` (copy 2)`, … before the
+/// extension. Folders are copied recursively and symlinks are recreated, not followed. A move
+/// within one filesystem is a rename; across filesystems it copies and then removes the source.
+/// Moving an item into the folder it is already in does nothing. A folder cannot be pasted into
+/// itself or one of its subfolders.
+///
+/// One result per source, in order; a failure does not stop the others.
+///
+/// This is **blocking** filesystem I/O: call it from a worker thread.
+pub fn paste_into(dest: &Path, sources: &[PathBuf], cut: bool) -> Vec<PasteResult> {
+    sources
+        .iter()
+        .map(|src| {
+            let result = paste_one(dest, src, cut).map_err(|e| e.to_string());
+            (src.clone(), result)
+        })
+        .collect()
+}
+
+fn paste_one(dest: &Path, src: &Path, cut: bool) -> std::io::Result<PathBuf> {
+    use std::io::{Error, ErrorKind};
+
+    let meta = std::fs::symlink_metadata(src)?;
+    let name = src
+        .file_name()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "the path has no file name"))?;
+    if !std::fs::metadata(dest)?.is_dir() {
+        return Err(Error::new(ErrorKind::NotADirectory, "the target is not a folder"));
+    }
+    if meta.is_dir() && std::fs::canonicalize(dest)?.starts_with(std::fs::canonicalize(src)?) {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "a folder cannot be pasted into itself",
+        ));
+    }
+    if cut && src.parent() == Some(dest) {
+        return Ok(src.to_path_buf());
+    }
+    let target = unique_target(dest, name)?;
+    if cut {
+        match renameat_with(
+            rustix::fs::CWD,
+            src,
+            rustix::fs::CWD,
+            &target,
+            RenameFlags::NOREPLACE,
+        ) {
+            Ok(()) => return Ok(target),
+            Err(Errno::XDEV) => {}
+            Err(Errno::INVAL | Errno::NOSYS) => {
+                std::fs::rename(src, &target)?;
+                return Ok(target);
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    copy_tree(src, &target)?;
+    if cut {
+        if meta.is_dir() {
+            std::fs::remove_dir_all(src)?;
+        } else {
+            std::fs::remove_file(src)?;
+        }
+    }
+    Ok(target)
+}
+
+/// `dest/name`, or the first free `stem (copy).ext`, `stem (copy 2).ext`, ….
+fn unique_target(dest: &Path, name: &OsStr) -> std::io::Result<PathBuf> {
+    let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    let first = dest.join(name);
+    if !taken(&first) {
+        return Ok(first);
+    }
+    let bytes = name.as_bytes();
+    // The extension starts at the last dot that is not the first byte.
+    let split = bytes
+        .iter()
+        .rposition(|&b| b == b'.')
+        .filter(|&i| i > 0)
+        .unwrap_or(bytes.len());
+    let (stem, ext) = bytes.split_at(split);
+    for n in 1..=9999 {
+        let mut candidate = stem.to_vec();
+        candidate.extend_from_slice(
+            if n == 1 {
+                " (copy)".to_owned()
+            } else {
+                format!(" (copy {n})")
+            }
+            .as_bytes(),
+        );
+        candidate.extend_from_slice(ext);
+        let path = dest.join(OsStr::from_bytes(&candidate));
+        if !taken(&path) {
+            return Ok(path);
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "no free name for the copy",
+    ))
+}
+
+fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(src)?;
+    if meta.file_type().is_symlink() {
+        std::os::unix::fs::symlink(std::fs::read_link(src)?, dst)
+    } else if meta.is_dir() {
+        std::fs::create_dir(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_tree(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+        std::fs::set_permissions(dst, meta.permissions())
+    } else if meta.is_file() {
+        std::fs::copy(src, dst).map(|_| ())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "special files cannot be copied",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +404,43 @@ mod tests {
             use std::os::unix::ffi::OsStringExt;
             OsString::from_vec(v.to_vec())
         }
+    }
+
+    #[test]
+    fn paste_copies_moves_and_never_overwrites() {
+        let dir = tempfile_dir();
+        let (a, b) = (dir.join("a"), dir.join("b"));
+        fs::create_dir_all(a.join("sub")).expect("mkdir");
+        fs::create_dir(&b).expect("mkdir");
+        fs::write(a.join("f.txt"), "one").expect("write");
+        fs::write(a.join("sub/g.txt"), "two").expect("write");
+        fs::write(b.join("f.txt"), "taken").expect("write");
+
+        let out = paste_into(&b, &[a.join("f.txt"), a.join("sub")], false);
+        assert_eq!(out[0].1.as_ref().expect("copied"), &b.join("f (copy).txt"));
+        assert_eq!(fs::read_to_string(b.join("f.txt")).expect("read"), "taken");
+        assert_eq!(fs::read_to_string(b.join("sub/g.txt")).expect("read"), "two");
+        assert!(a.join("f.txt").exists(), "copy keeps the source");
+
+        let out = paste_into(&b, &[a.join("f.txt")], true);
+        assert_eq!(out[0].1.as_ref().expect("moved"), &b.join("f (copy 2).txt"));
+        assert!(!a.join("f.txt").exists(), "move removes the source");
+
+        let out = paste_into(&a, &[a.join("sub")], false);
+        assert!(out[0].1.is_ok());
+        let into_self = paste_into(&a.join("sub"), &[a.join("sub")], false);
+        assert!(into_self[0].1.is_err());
+        fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    fn tempfile_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "everythux-paste-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        dir
     }
 }

@@ -307,6 +307,14 @@ fn handle_platform_action(action: PlatformAction) -> Vec<BackendEvent> {
             result,
         }];
     }
+    if let PlatformAction::Paste { dest } = action {
+        let read = everythux_platform::clipboard::read_files().map_err(|e| e.to_string());
+        let (cut, results) = match read {
+            Ok((sources, cut)) => (cut, Ok(fileops::paste_into(&dest, &sources, cut))),
+            Err(e) => (false, Err(e)),
+        };
+        return vec![BackendEvent::Pasted { dest, cut, results }];
+    }
     if let PlatformAction::Trash(paths) = action {
         let results = paths
             .into_iter()
@@ -326,10 +334,13 @@ fn handle_platform_action(action: PlatformAction) -> Vec<BackendEvent> {
         PlatformAction::CopyFiles(paths) => {
             everythux_platform::clipboard::copy_files(paths).map(|_| Method::Clipboard)
         }
+        PlatformAction::CutFiles(paths) => {
+            everythux_platform::clipboard::cut_files(paths).map(|_| Method::Clipboard)
+        }
         PlatformAction::OpenDefault(p) => file_manager::open_default(p),
         PlatformAction::ShowItem(p) => file_manager::show_item(p),
         PlatformAction::ShowProperties(t) => file_manager::show_properties(&t.path),
-        PlatformAction::Rename { .. } | PlatformAction::Trash(_) => {
+        PlatformAction::Rename { .. } | PlatformAction::Trash(_) | PlatformAction::Paste { .. } => {
             Err(PlatformError::Unsupported("handled separately"))
         }
     };

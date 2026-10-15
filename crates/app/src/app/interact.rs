@@ -51,6 +51,10 @@ pub(crate) enum Effect {
     },
     /// Put these files on the clipboard as a file list.
     CopyFiles(Vec<PathBuf>),
+    /// Put these files on the clipboard as a cut list.
+    CutFiles(Vec<PathBuf>),
+    /// Paste the clipboard's files into this folder.
+    PasteInto(PathBuf),
     /// Move these to the trash.
     Trash(Vec<PathBuf>),
 }
@@ -90,6 +94,10 @@ pub(crate) enum ContextAction {
     HideEntry(usize),
     /// Copy the selected files to the clipboard as a file list.
     CopyFiles,
+    /// Cut the selected files to the clipboard (paste moves them).
+    CutFiles,
+    /// Paste the clipboard's files into the right-clicked folder.
+    Paste,
     /// Move the selection to the trash.
     Trash,
 }
@@ -238,6 +246,21 @@ impl App {
                     vec![Effect::CopyFiles(paths)]
                 }
             }
+            ContextAction::CutFiles => {
+                let paths = self.context_paths(row);
+                if paths.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Effect::CutFiles(paths)]
+                }
+            }
+            ContextAction::Paste => single(
+                results
+                    .is_dir(row)
+                    .then(|| results.full_path(row))
+                    .flatten()
+                    .map(Effect::PasteInto),
+            ),
             ContextAction::Trash => {
                 let paths = self.context_paths(row);
                 if paths.is_empty() {
@@ -393,6 +416,8 @@ impl App {
                     self.backend.platform(PlatformAction::Launch { launcher, paths });
                 }
                 Effect::CopyFiles(paths) => self.backend.platform(PlatformAction::CopyFiles(paths)),
+                Effect::CutFiles(paths) => self.backend.platform(PlatformAction::CutFiles(paths)),
+                Effect::PasteInto(dest) => self.backend.platform(PlatformAction::Paste { dest }),
                 Effect::Trash(paths) => self.backend.platform(PlatformAction::Trash(paths)),
                 Effect::CopyText(text) => {
                     let count = text.lines().count();

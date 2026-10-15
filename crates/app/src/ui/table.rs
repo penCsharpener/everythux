@@ -296,6 +296,7 @@ fn context_menu(
     row: usize,
     renamable: bool,
     online: bool,
+    is_folder: bool,
     extras: &ContextExtras,
     out: &mut Vec<(usize, ContextAction)>,
 ) {
@@ -332,6 +333,23 @@ fn context_menu(
     );
     pick(ui, out, row, "Copy name", ContextAction::Copy(CopyKind::Name));
     pick(ui, out, row, "Copy file", ContextAction::CopyFiles);
+    let cut = ui
+        .add_enabled(online, egui::Button::new("Cut"))
+        .on_disabled_hover_text("The volume is offline");
+    if cut.clicked() {
+        out.push((row, ContextAction::CutFiles));
+        ui.close();
+    }
+    if is_folder {
+        let paste = ui
+            .add_enabled(online, egui::Button::new("Paste here"))
+            .on_hover_text("Paste the copied or cut files into this folder")
+            .on_disabled_hover_text("The volume is offline");
+        if paste.clicked() {
+            out.push((row, ContextAction::Paste));
+            ui.close();
+        }
+    }
     pick(
         ui,
         out,
@@ -456,7 +474,15 @@ fn draw_table(
                     out.cell_events.push((idx, col.id, CellEvent::Secondary));
                 }
                 resp.context_menu(|ui| {
-                    context_menu(ui, idx, renamable, !cached.offline, p.extras, &mut out.context);
+                    context_menu(
+                        ui,
+                        idx,
+                        renamable,
+                        !cached.offline,
+                        cached.category == Category::Folder,
+                        p.extras,
+                        &mut out.context,
+                    );
                 });
             }
         });
