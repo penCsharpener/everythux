@@ -58,6 +58,7 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   negates one; `size:<1kb` / `size:>1mb` keep working.
 - 0.16.0: Delete files from the result list: `Delete` moves the selection to the trash, `Shift+Delete` and
   Right-click → Delete permanently… delete it for good after a confirmation.
+- 0.16.1: A search is also remembered in the history when its search field loses the focus.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
