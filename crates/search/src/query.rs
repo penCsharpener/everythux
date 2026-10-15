@@ -6,6 +6,10 @@
 //! - filters: `ext:pdf;docx`, `size:>100mb`, `size:1mb..10mb`, `dm:today|yesterday|thisweek|lastweek|
 //!   thismonth|thisyear|2026-01-01|2026-01-01..2026-03-01`, `path:<substr>`, `file:`, `folder:`,
 //!   `regex:<re>`, `case:<term>`, `vol:<mount-point substring>`
+//! - `<` `>` group words into one operand: `<a b>|<c d>` is `(a AND b) OR (c AND d)`; groups nest and
+//!   `!<a b>` negates one. `<` opens a group only at the start of a word and `>` closes it only at the
+//!   end of a word, so `size:>1mb` and `size:<1kb` keep their comparisons; a group left open runs to
+//!   the end of the query
 //! - an empty query matches everything
 //!
 //! # Details
@@ -312,29 +316,43 @@ impl Parser<'_> {
             self.options.case_sensitive = true;
         }
 
+        let expr = self.group(&mut items.into_iter())?.unwrap_or(Expr::True);
+        Ok(Query {
+            expr,
+            options: self.options,
+        })
+    }
+
+    /// Parses items up to the `>` that closes this group (or the end of the input) into one
+    /// expression: AND of OR-runs, where `|` joins the operands next to it. `None` when the
+    /// group holds no operand (`<>`), so it can be skipped like an empty filter.
+    fn group(&self, items: &mut std::vec::IntoIter<Item>) -> Result<Option<Expr>, QueryError> {
         let mut operands = Vec::new();
         let mut group: Vec<Expr> = Vec::new();
         let mut joining = false;
-        for item in items {
-            match item {
-                Item::Pipe => joining = !group.is_empty(),
-                Item::Piece(piece) => {
-                    let Some(expr) = self.piece(&piece)? else { continue };
-                    if !joining && !group.is_empty() {
-                        operands.push(Expr::or(std::mem::take(&mut group)));
-                    }
-                    group.push(expr);
-                    joining = false;
+        while let Some(item) = items.next() {
+            let expr = match item {
+                Item::Close => break,
+                Item::Pipe => {
+                    joining = !group.is_empty();
+                    continue;
                 }
+                Item::Piece(piece) => self.piece(&piece)?,
+                Item::Open { neg } => self
+                    .group(items)?
+                    .map(|inner| if neg { Expr::not(inner) } else { inner }),
+            };
+            let Some(expr) = expr else { continue };
+            if !joining && !group.is_empty() {
+                operands.push(Expr::or(std::mem::take(&mut group)));
             }
+            group.push(expr);
+            joining = false;
         }
         if !group.is_empty() {
             operands.push(Expr::or(group));
         }
-        Ok(Query {
-            expr: Expr::and(operands),
-            options: self.options,
-        })
+        Ok((!operands.is_empty()).then(|| Expr::and(operands)))
     }
 
     /// Builds the expression for one word; `None` for a no-op (empty filter value).
@@ -459,6 +477,21 @@ mod tests {
         assert!(at("*").unwrap().is_match_all());
         assert!(at("path:").unwrap().is_match_all());
         assert!(!at("a").unwrap().is_match_all());
+    }
+
+    #[test]
+    fn groups_combine_and_terms_into_one_operand() {
+        assert_eq!(ast("<a b>|<c d>"), "or(and(sub:a,sub:b),and(sub:c,sub:d))");
+        assert_eq!(ast("<a|b> c"), "and(or(sub:a,sub:b),sub:c)");
+        assert_eq!(ast("x <a b>|c"), "and(sub:x,or(and(sub:a,sub:b),sub:c))");
+        assert_eq!(ast("!<a b>"), "not(and(sub:a,sub:b))");
+        assert_eq!(ast("<a <b|c> d>"), "and(sub:a,or(sub:b,sub:c),sub:d)");
+        assert_eq!(ast("<a b"), "and(sub:a,sub:b)", "an open group runs to the end");
+        assert!(at("<>").unwrap().is_match_all());
+        assert_eq!(
+            ast("<size:>1kb ext:pdf>|<ext:txt>"),
+            "or(and(size:1025..18446744073709551615,ext:pdf),ext:txt)"
+        );
     }
 
     #[test]

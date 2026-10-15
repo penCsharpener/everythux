@@ -1,4 +1,5 @@
-//! Tokenizer: splits the search box text into pieces (terms and filters) and `|` separators.
+//! Tokenizer: splits the search box text into pieces (terms and filters), `|` separators and
+//! `<` `>` groups.
 
 use crate::query::QueryError;
 
@@ -93,9 +94,19 @@ impl Piece {
 pub(super) enum Item {
     Piece(Piece),
     Pipe,
+    /// `<`: starts a group, which is one operand (`neg` for `!<…>`).
+    Open {
+        neg: bool,
+    },
+    /// `>`: ends the innermost open group.
+    Close,
 }
 
-/// Splits `input` into pieces and pipes.
+/// Splits `input` into pieces, pipes and group brackets.
+///
+/// `<` opens a group when it starts a word (so `size:<1kb` keeps its comparison). `>` closes the
+/// innermost open group when it ends a word and does not follow a `:` (so `size:>1mb` keeps its
+/// comparison); a group left open runs to the end of the input.
 ///
 /// `name:a|b` is shorthand for `name:a|name:b`: a word that directly follows a `|` that directly
 /// follows a filter with a value inherits that filter (`dm:today|yesterday`, `ext:jpg|png`).
@@ -104,8 +115,12 @@ pub(super) fn lex(input: &str) -> Result<Vec<Item>, QueryError> {
     let mut cur: Option<Piece> = None;
     let mut in_quote = false;
     let mut inherit: Option<FilterKind> = None;
+    let mut depth = 0usize;
+    let mut prev: Option<char> = None;
+    let mut chars = input.chars().peekable();
 
-    for ch in input.chars() {
+    while let Some(ch) = chars.next() {
+        let before = prev.replace(ch);
         if in_quote {
             if ch == '"' {
                 in_quote = false;
@@ -119,6 +134,26 @@ pub(super) fn lex(input: &str) -> Result<Vec<Item>, QueryError> {
                 in_quote = true;
                 let p = cur.get_or_insert_with(Piece::new);
                 p.quote_start.get_or_insert(p.text.len());
+            }
+            '<' if cur
+                .as_ref()
+                .is_none_or(|p| p.text.is_empty() && p.quote_start.is_none()) =>
+            {
+                let neg = cur.take().is_some_and(|p| p.neg);
+                inherit = None;
+                depth += 1;
+                items.push(Item::Open { neg });
+            }
+            '>' if depth > 0
+                && before != Some(':')
+                && chars
+                    .peek()
+                    .is_none_or(|n| n.is_whitespace() || matches!(n, '|' | '<' | '>')) =>
+            {
+                flush(&mut cur, &mut items, &mut inherit);
+                inherit = None;
+                depth -= 1;
+                items.push(Item::Close);
             }
             '|' => {
                 let adjacent = cur.is_some();
@@ -183,6 +218,8 @@ mod tests {
             .map(|i| match i {
                 Item::Piece(p) => format!("{}{}", if p.neg { "!" } else { "" }, p.text),
                 Item::Pipe => "|".to_owned(),
+                Item::Open { neg } => format!("{}<", if neg { "!" } else { "" }),
+                Item::Close => ">".to_owned(),
             })
             .collect()
     }
@@ -213,7 +250,7 @@ mod tests {
     fn filter_prefix_requires_known_name_outside_quotes() {
         let first = |s: &str| match lex(s).unwrap().remove(0) {
             Item::Piece(p) => p,
-            Item::Pipe => unreachable!(),
+            _ => unreachable!(),
         };
         assert_eq!(
             first("ext:pdf").filter().map(|(k, v)| (k, v.to_owned())),
@@ -232,5 +269,26 @@ mod tests {
         assert_eq!(texts("ext:a|path:x"), ["ext:a", "|", "path:x"]);
         assert_eq!(texts("ext:a | b"), ["ext:a", "|", "b"]);
         assert_eq!(texts("foo|bar"), ["foo", "|", "bar"]);
+    }
+
+    #[test]
+    fn groups_open_at_word_start_and_close_at_word_end() {
+        assert_eq!(
+            texts("<a b>|<c d>"),
+            ["<", "a", "b", ">", "|", "<", "c", "d", ">"]
+        );
+        assert_eq!(texts("!<a b> c"), ["!<", "a", "b", ">", "c"]);
+        assert_eq!(texts("<a <b c>>"), ["<", "a", "<", "b", "c", ">", ">"]);
+        assert_eq!(texts("< a b >"), ["<", "a", "b", ">"]);
+        assert_eq!(texts("<a"), ["<", "a"], "an open group runs to the end");
+    }
+
+    #[test]
+    fn comparison_operators_are_not_brackets() {
+        assert_eq!(texts("size:>1mb"), ["size:>1mb"]);
+        assert_eq!(texts("size:<1kb"), ["size:<1kb"]);
+        assert_eq!(texts("<size:>1mb ext:pdf>"), ["<", "size:>1mb", "ext:pdf", ">"]);
+        assert_eq!(texts("a>b"), ["a>b"], "a stray > is text");
+        assert_eq!(texts("a>"), ["a>"], "outside a group too");
     }
 }

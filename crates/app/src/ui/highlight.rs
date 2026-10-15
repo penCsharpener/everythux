@@ -17,8 +17,9 @@ pub(crate) fn terms(texts: &[String], case_sensitive: bool, regex: bool) -> Vec<
     }
     for text in texts {
         for token in tokens(text) {
-            let mut word = token.as_str();
-            if word.starts_with('!') {
+            // `<` and `>` only group words.
+            let mut word = token.trim_start_matches('<').trim_end_matches('>');
+            if word.starts_with('!') || token.starts_with("!<") {
                 continue;
             }
             if let Some((head, rest)) = word.split_once(':') {
@@ -29,7 +30,7 @@ pub(crate) fn terms(texts: &[String], case_sensitive: bool, regex: bool) -> Vec<
                 }
             }
             for part in word.split(['*', '?', '|']) {
-                let part = part.trim_matches('"');
+                let part = part.trim_matches(['"', '<', '>']);
                 if part.is_empty() {
                     continue;
                 }
@@ -163,6 +164,8 @@ mod tests {
             false,
         );
         assert_eq!(t, ["report", "my doc", "src", "lib"]);
+        let g = terms(&s(&["<one two>|<three !four> !<five>"]), false, false);
+        assert_eq!(g, ["one", "two", "three"]);
     }
 
     #[test]
