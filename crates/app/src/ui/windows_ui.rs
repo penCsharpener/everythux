@@ -328,6 +328,7 @@ impl App {
         let mut delete = None;
         let mut run = None;
         let mut renamed = false;
+        let (mut do_import, mut do_export) = (false, false);
         egui::Window::new("Bookmarks")
             .id(egui::Id::new("everythux_bookmarks"))
             .open(&mut open)
@@ -368,7 +369,35 @@ impl App {
                         });
                     });
                 }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("File:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.windows.bookmarks.transfer_path)
+                            .hint_text("/path/to/bookmarks.json")
+                            .desired_width(f32::INFINITY),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    do_import = ui
+                        .button("Import")
+                        .on_hover_text("Add the bookmarks of a JSON file")
+                        .clicked();
+                    do_export = ui
+                        .button("Export")
+                        .on_hover_text("Write all bookmarks to a JSON file")
+                        .clicked();
+                    if let Some(message) = &self.windows.bookmarks.message {
+                        ui.weak(message);
+                    }
+                });
             });
+        if do_import {
+            self.import_bookmarks();
+        }
+        if do_export {
+            self.export_bookmarks();
+        }
         if add {
             let name = std::mem::take(&mut self.windows.bookmarks.name);
             self.add_bookmark(&name);

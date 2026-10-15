@@ -3,6 +3,7 @@
 use everythux_core::config::Bookmark;
 
 use super::{App, Command, PopupId};
+use crate::backend::Compute;
 use crate::search_bars::FIRST_BAR;
 
 impl App {
@@ -61,6 +62,57 @@ impl App {
         }
     }
 
+    /// Bookmarks → window → Export: writes all bookmarks to the typed path.
+    pub(crate) fn export_bookmarks(&mut self) {
+        let path = self.windows.bookmarks.transfer_path.trim().to_owned();
+        if path.is_empty() {
+            self.windows.bookmarks.message = Some("Enter a file path first".to_owned());
+            return;
+        }
+        self.backend.compute(Compute::ExportBookmarks {
+            path: path.into(),
+            bookmarks: self.config.bookmarks.clone(),
+        });
+    }
+
+    /// Bookmarks → window → Import: reads bookmarks from the typed path.
+    pub(crate) fn import_bookmarks(&mut self) {
+        let path = self.windows.bookmarks.transfer_path.trim().to_owned();
+        if path.is_empty() {
+            self.windows.bookmarks.message = Some("Enter a file path first".to_owned());
+            return;
+        }
+        self.backend.compute(Compute::ImportBookmarks(path.into()));
+    }
+
+    /// Adds the imported bookmarks that are not there yet, at the end.
+    pub(crate) fn on_bookmarks_imported(&mut self, result: Result<Vec<Bookmark>, String>) {
+        self.windows.bookmarks.message = Some(match result {
+            Ok(found) => {
+                let total = found.len();
+                let before = self.config.bookmarks.len();
+                for bookmark in found {
+                    if !self.config.bookmarks.contains(&bookmark) {
+                        self.config.bookmarks.push(bookmark);
+                    }
+                }
+                let added = self.config.bookmarks.len() - before;
+                if added > 0 {
+                    self.config_changed();
+                }
+                format!("Imported {added} new bookmark(s) from {total}")
+            }
+            Err(e) => format!("Import failed: {e}"),
+        });
+    }
+
+    pub(crate) fn on_bookmarks_exported(&mut self, result: Result<(std::path::PathBuf, usize), String>) {
+        self.windows.bookmarks.message = Some(match result {
+            Ok((path, n)) => format!("Exported {n} bookmark(s) to {}", path.display()),
+            Err(e) => format!("Export failed: {e}"),
+        });
+    }
+
     /// Runs bookmark `index`: restores its bars and switches and searches.
     pub(crate) fn run_bookmark(&mut self, index: usize) {
         let Some(bookmark) = self.config.bookmarks.get(index).cloned() else {
@@ -103,5 +155,43 @@ mod tests {
         assert!(!t.app.add_bookmark("blank"), "blank searches are not bookmarked");
         t.app.delete_bookmark(0);
         assert_eq!(t.app.config.bookmarks, []);
+    }
+
+    #[test]
+    fn export_then_import_merges_without_duplicates() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("b.json");
+        let mut t = TestApp::new();
+        t.app.set_search_text("report");
+        t.app.add_bookmark("reports");
+        t.app.windows.bookmarks.transfer_path = file.display().to_string();
+        t.app.export_bookmarks();
+        t.pump();
+        assert!(
+            t.app
+                .windows
+                .bookmarks
+                .message
+                .as_deref()
+                .is_some_and(|m| m.contains("Exported 1")),
+            "{:?}",
+            t.app.windows.bookmarks.message
+        );
+
+        t.app.set_search_text("notes");
+        t.app.add_bookmark("notes");
+        t.app.import_bookmarks();
+        t.pump();
+        let names: Vec<&str> = t.app.config.bookmarks.iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["reports", "notes"],
+            "the existing bookmark is not duplicated"
+        );
+
+        t.app.config.bookmarks.clear();
+        t.app.import_bookmarks();
+        t.pump();
+        assert_eq!(t.app.config.bookmarks.len(), 1);
     }
 }

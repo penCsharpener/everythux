@@ -4,6 +4,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use everythux_core::config::Bookmark;
 use everythux_core::exclusion::{ExclusionRule, ExclusionSet};
 use everythux_core::ids::DirId;
 use everythux_core::snapshot::IndexSnapshot;
@@ -25,6 +26,10 @@ pub(crate) fn run(task: Compute) -> BackendEvent {
         },
         Compute::ImportRules(path) => BackendEvent::RulesImported(import_rules(&path)),
         Compute::ExportRules { path, rules } => BackendEvent::RulesExported(export_rules(&path, &rules)),
+        Compute::ImportBookmarks(path) => BackendEvent::BookmarksImported(import_bookmarks(&path)),
+        Compute::ExportBookmarks { path, bookmarks } => {
+            BackendEvent::BookmarksExported(export_bookmarks(&path, &bookmarks))
+        }
     }
 }
 
@@ -203,6 +208,27 @@ pub(crate) fn export_rules(path: &Path, rules: &[ExclusionRule]) -> Result<(Path
     Ok((path.to_owned(), rules.len()))
 }
 
+/// Reads bookmarks from a JSON file: either an array of bookmarks or a full config with `bookmarks`.
+pub(crate) fn import_bookmarks(path: &Path) -> Result<Vec<Bookmark>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let bookmarks = match value {
+        serde_json::Value::Object(mut obj) => obj
+            .remove("bookmarks")
+            .ok_or_else(|| format!("{}: no \"bookmarks\" array", path.display()))?,
+        other => other,
+    };
+    serde_json::from_value(bookmarks).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Writes bookmarks as pretty JSON.
+pub(crate) fn export_bookmarks(path: &Path, bookmarks: &[Bookmark]) -> Result<(PathBuf, usize), String> {
+    let text = serde_json::to_string_pretty(bookmarks).map_err(|e| e.to_string())?;
+    std::fs::write(path, text + "\n").map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok((path.to_owned(), bookmarks.len()))
+}
+
 #[cfg(test)]
 mod tests {
     use everythux_core::exclusion::RuleKind;
@@ -340,5 +366,25 @@ mod tests {
         std::fs::write(&path, r#"{"exclusions":[{"pattern":"obj","kind":"dir"}]}"#).expect("write");
         let rules = import_rules(&path).expect("import");
         assert_eq!(rules, vec![ExclusionRule::new("obj", RuleKind::Dir)]);
+    }
+
+    #[test]
+    fn bookmarks_round_trip_and_accept_a_whole_config() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marks = vec![Bookmark {
+            name: "pdfs".into(),
+            texts: vec!["ext:pdf".into(), "report".into()],
+            case_sensitive: true,
+            ..Bookmark::default()
+        }];
+        let file = dir.path().join("b.json");
+        assert_eq!(export_bookmarks(&file, &marks), Ok((file.clone(), 1)));
+        assert_eq!(import_bookmarks(&file), Ok(marks.clone()));
+
+        let config = dir.path().join("config.json");
+        std::fs::write(&config, serde_json::json!({ "bookmarks": marks }).to_string()).expect("write");
+        assert_eq!(import_bookmarks(&config), Ok(marks));
+        std::fs::write(&config, "{}").expect("write");
+        assert!(import_bookmarks(&config).is_err());
     }
 }

@@ -289,6 +289,8 @@ impl Backend for FakeBackend {
             Compute::Properties { .. } => "properties",
             Compute::ImportRules(_) => "import_rules",
             Compute::ExportRules { .. } => "export_rules",
+            Compute::ImportBookmarks(_) => "import_bookmarks",
+            Compute::ExportBookmarks { .. } => "export_bookmarks",
         };
         self.record(Call::Compute(kind));
         // The computations are pure or touch only test-owned paths, so run them inline.

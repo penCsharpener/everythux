@@ -52,6 +52,8 @@ impl App {
             BackendEvent::Properties { id, info } => self.on_properties(id, info),
             BackendEvent::RulesImported(result) => self.on_rules_imported(result),
             BackendEvent::RulesExported(result) => self.on_rules_exported(result),
+            BackendEvent::BookmarksImported(result) => self.on_bookmarks_imported(result),
+            BackendEvent::BookmarksExported(result) => self.on_bookmarks_exported(result),
             BackendEvent::ConfigSaveFailed(error) => {
                 self.add_banner(format!("Could not save the configuration: {error}"));
             }

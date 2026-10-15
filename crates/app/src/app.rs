@@ -76,6 +76,10 @@ pub(crate) enum PopupId {
 pub(crate) struct BookmarksWindow {
     pub(crate) open: bool,
     pub(crate) name: String,
+    /// File to import from or export to.
+    pub(crate) transfer_path: String,
+    /// Result of the last import or export.
+    pub(crate) message: Option<String>,
 }
 
 /// All secondary windows. `order` is the z-order, topmost last.

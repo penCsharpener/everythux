@@ -15,7 +15,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use everythux_core::config::Config;
+use everythux_core::config::{Bookmark, Config};
 use everythux_core::exclusion::ExclusionRule;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{IndexEvent, IndexerSettings, Job};
@@ -109,6 +109,10 @@ pub(crate) enum Compute {
         path: PathBuf,
         rules: Vec<ExclusionRule>,
     },
+    /// Reads bookmarks from a JSON file.
+    ImportBookmarks(PathBuf),
+    /// Writes bookmarks to a JSON file.
+    ExportBookmarks { path: PathBuf, bookmarks: Vec<Bookmark> },
 }
 
 /// Result of [`Compute::ExclusionPreview`].
@@ -163,6 +167,8 @@ pub(crate) enum BackendEvent {
     },
     RulesImported(Result<Vec<ExclusionRule>, String>),
     RulesExported(Result<(PathBuf, usize), String>),
+    BookmarksImported(Result<Vec<Bookmark>, String>),
+    BookmarksExported(Result<(PathBuf, usize), String>),
     ConfigSaveFailed(String),
     /// A service could not start (e.g. the database is unusable); shown as a banner.
     Fatal(String),
