@@ -184,4 +184,6 @@ pub(crate) trait Backend {
     fn describe_extension(&self, ext: &str) -> Arc<str>;
     /// Icon category for a lowercase extension.
     fn category(&self, ext: &str) -> Category;
+    /// The JSON config file the app loads and saves.
+    fn config_path(&self) -> PathBuf;
 }

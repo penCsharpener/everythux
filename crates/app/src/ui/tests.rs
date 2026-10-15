@@ -2324,3 +2324,20 @@ mod context_menu {
         );
     }
 }
+
+#[test]
+fn toolbar_buttons_run_their_commands() {
+    let mut r = rig();
+    r.show_default();
+    r.harness.get_by_label("Open JSON config").click();
+    r.harness.run_steps(3);
+    assert_eq!(
+        r.fake.platform_actions(),
+        [PlatformAction::OpenDefault(
+            "/home/me/.config/everythux/config.json".into()
+        )]
+    );
+    r.harness.get_by_label_contains("Reindex all").click();
+    r.harness.run_steps(3);
+    assert_eq!(r.fake.jobs(), [Job::FullReindex]);
+}

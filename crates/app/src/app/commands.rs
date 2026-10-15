@@ -34,6 +34,8 @@ pub(crate) enum Command {
     /// View → Context menu → Restore hidden entries.
     RestoreHiddenContextEntries,
     FocusSearch,
+    /// Toolbar: open the JSON config file in the default application.
+    OpenConfig,
     ToggleMatchPath,
     ToggleCaseSensitive,
     ToggleRegex,
@@ -106,6 +108,11 @@ impl App {
             Command::ToggleContextOpenWith => self.toggle_context_open_with(),
             Command::ToggleContextServiceMenus => self.toggle_context_service_menus(),
             Command::RestoreHiddenContextEntries => self.restore_hidden_context_entries(),
+            Command::OpenConfig => {
+                let path = self.backend.config_path();
+                self.backend
+                    .platform(crate::backend::PlatformAction::OpenDefault(path));
+            }
             Command::FocusSearch => self.search.focus_bar = Some(FIRST_BAR),
             Command::ToggleMatchPath => self.toggle_match_path(),
             Command::ToggleCaseSensitive => self.toggle_case_sensitive(),

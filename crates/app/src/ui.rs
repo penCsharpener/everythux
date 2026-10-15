@@ -11,6 +11,7 @@ mod status_bar;
 mod tab_bar;
 pub(crate) mod table;
 pub(crate) mod text_view;
+mod toolbar;
 mod windows_ui;
 
 #[cfg(test)]

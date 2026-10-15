@@ -86,6 +86,7 @@ impl App {
         }
 
         egui::Panel::top("everythux_menu").show(ui, |ui| self.menu_bar(ui));
+        egui::Panel::top("everythux_toolbar").show(ui, |ui| self.toolbar(ui));
         self.show_banners(ui);
         egui::Panel::top("everythux_tabs").show(ui, |ui| self.tab_bar(ui));
         egui::Panel::top("everythux_search").show(ui, |ui| self.search_bar(ui));

@@ -51,6 +51,7 @@ pub(crate) struct RealBackend {
     udisks_tx: Sender<UdisksTask>,
     compute_tx: Sender<Compute>,
     saver: ConfigSaver,
+    config_file: PathBuf,
 }
 
 impl RealBackend {
@@ -134,6 +135,7 @@ impl RealBackend {
                 udisks_tx,
                 compute_tx,
                 saver,
+                config_file: paths.config_file.clone(),
             },
             rx,
         )
@@ -287,6 +289,10 @@ impl Backend for RealBackend {
 
     fn category(&self, ext: &str) -> Category {
         mime::category(ext)
+    }
+
+    fn config_path(&self) -> PathBuf {
+        self.config_file.clone()
     }
 }
 

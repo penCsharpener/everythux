@@ -294,6 +294,10 @@ impl Backend for FakeBackend {
         }
     }
 
+    fn config_path(&self) -> PathBuf {
+        "/home/me/.config/everythux/config.json".into()
+    }
+
     fn category(&self, ext: &str) -> Category {
         match ext {
             "pdf" | "txt" => Category::Document,
