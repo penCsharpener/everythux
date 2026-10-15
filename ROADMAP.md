@@ -44,6 +44,9 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   fixed-size frame; wheel zoom centres on the pointer.
 - 0.12.2: PDF previews page through the whole document (◀ ▶ buttons or the wheel over the page).
 - 0.12.3: zoomed image previews are panned by dragging, with the grab / grabbing hand cursors.
+- 0.13.0: **search history**: every search is remembered indefinitely in `history.json` (the search is the
+  key; reuse moves its date to now). Drop-down on the first search bar (chevron button or Alt+Down), newest
+  first; Enter/click runs a search, Shift+Delete forgets it. A search counts as used when a result is opened.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
