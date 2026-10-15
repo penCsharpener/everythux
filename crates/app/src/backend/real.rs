@@ -16,8 +16,11 @@ use everythux_platform::udisks;
 use everythux_preview::{PreviewLimits, PreviewService, TextEncoding};
 use everythux_search::{SearchRequest, SearchService};
 
-use super::workers::{CONFIG_DEBOUNCE, ConfigSaver, forward, spawn_compute_worker, spawn_worker};
+use super::workers::{
+    CONFIG_DEBOUNCE, ConfigSaver, HistorySaver, forward, spawn_compute_worker, spawn_worker,
+};
 use super::{Backend, BackendEvent, Compute, PlatformAction};
+use everythux_core::history::SearchHistory;
 
 enum UdisksTask {
     List(Vec<String>),
@@ -52,6 +55,8 @@ pub(crate) struct RealBackend {
     compute_tx: Sender<Compute>,
     saver: ConfigSaver,
     config_file: PathBuf,
+    history_file: PathBuf,
+    history_saver: HistorySaver,
 }
 
 impl RealBackend {
@@ -136,6 +141,8 @@ impl RealBackend {
                 compute_tx,
                 saver,
                 config_file: paths.config_file.clone(),
+                history_file: paths.history_file.clone(),
+                history_saver: HistorySaver::start(paths.history_file.clone(), CONFIG_DEBOUNCE),
             },
             rx,
         )
@@ -293,6 +300,17 @@ impl Backend for RealBackend {
 
     fn config_path(&self) -> PathBuf {
         self.config_file.clone()
+    }
+
+    fn load_history(&self) -> SearchHistory {
+        SearchHistory::load(&self.history_file).unwrap_or_else(|error| {
+            tracing::warn!(%error, "cannot read the search history; starting empty");
+            SearchHistory::default()
+        })
+    }
+
+    fn save_history(&self, history: &SearchHistory) {
+        self.history_saver.save(history.clone());
     }
 }
 

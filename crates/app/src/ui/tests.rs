@@ -2390,3 +2390,40 @@ fn toolbar_buttons_run_their_commands() {
     r.harness.run_steps(3);
     assert_eq!(r.fake.jobs(), [Job::FullReindex]);
 }
+
+#[test]
+fn history_dropdown_opens_picks_and_forgets_with_shift_delete() {
+    let mut r = rig();
+    r.show_default();
+    let now = 1_700_000_000;
+    {
+        let app = r.harness.state_mut();
+        app.history.touch(&["report".to_owned()], now);
+        app.history.touch(&["notes".to_owned()], now + 10);
+    }
+    r.harness.run_steps(2);
+    r.harness.get_by_label("Search history").click();
+    r.harness.run_steps(3);
+    assert!(r.harness.query_by_label("notes").is_some());
+    assert!(r.harness.query_by_label("report").is_some());
+
+    // Newest first: the first line is "notes". Move to "report" and forget it.
+    r.harness.key_press(Key::ArrowDown);
+    r.harness.run_steps(2);
+    r.harness.key_press_modifiers(Modifiers::SHIFT, Key::Delete);
+    r.harness.run_steps(3);
+    let labels: Vec<String> = r
+        .harness
+        .state()
+        .history
+        .entries
+        .iter()
+        .map(everythux_core::history::HistoryEntry::label)
+        .collect();
+    assert_eq!(labels, ["notes"]);
+
+    // Enter runs the highlighted search.
+    r.harness.key_press(Key::Enter);
+    r.harness.run_steps(3);
+    assert_eq!(r.harness.state().search.texts(), ["notes"]);
+}

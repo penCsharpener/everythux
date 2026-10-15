@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use everythux_core::config::Config;
+use everythux_core::history::SearchHistory;
 use everythux_core::ids::EntryId;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{IndexerSettings, Job};
@@ -38,6 +39,7 @@ pub(crate) enum Call {
     Mount(String),
     Compute(&'static str),
     SaveConfig(Box<Config>),
+    SaveHistory(Box<SearchHistory>),
 }
 
 #[derive(Debug, Default)]
@@ -137,6 +139,14 @@ impl FakeHandle {
     pub(crate) fn last_saved_config(&self) -> Option<Config> {
         self.calls().into_iter().rev().find_map(|c| match c {
             Call::SaveConfig(c) => Some(*c),
+            _ => None,
+        })
+    }
+
+    /// The most recent history passed to `save_history`.
+    pub(crate) fn last_saved_history(&self) -> Option<SearchHistory> {
+        self.calls().into_iter().rev().find_map(|c| match c {
+            Call::SaveHistory(h) => Some(*h),
             _ => None,
         })
     }
@@ -295,6 +305,14 @@ impl Backend for FakeBackend {
         } else {
             Arc::from(format!("{} file", ext.to_uppercase()))
         }
+    }
+
+    fn load_history(&self) -> SearchHistory {
+        SearchHistory::default()
+    }
+
+    fn save_history(&self, history: &SearchHistory) {
+        self.record(Call::SaveHistory(Box::new(history.clone())));
     }
 
     fn config_path(&self) -> PathBuf {

@@ -14,6 +14,7 @@
 
 pub mod config;
 pub mod exclusion;
+pub mod history;
 pub mod ids;
 pub mod model;
 pub mod paths;

@@ -7,6 +7,8 @@ use std::path::PathBuf;
 pub struct AppPaths {
     /// `$XDG_CONFIG_HOME/everythux/config.json`
     pub config_file: PathBuf,
+    /// `history.json` next to the config file.
+    pub history_file: PathBuf,
     /// `$XDG_DATA_HOME/everythux/index.db`
     pub db_file: PathBuf,
     /// `$XDG_STATE_HOME/everythux/` (falls back to the data dir)
@@ -26,6 +28,7 @@ impl AppPaths {
             std::env::var_os("EVERYTHUX_DB").map_or_else(|| dirs.data_dir().join("index.db"), PathBuf::from);
         let log_dir = dirs.state_dir().unwrap_or_else(|| dirs.data_dir()).to_path_buf();
         Some(Self {
+            history_file: config_file.with_file_name("history.json"),
             config_file,
             db_file,
             log_dir,
@@ -36,6 +39,7 @@ impl AppPaths {
     pub fn in_dir(dir: &std::path::Path) -> Self {
         Self {
             config_file: dir.join("config.json"),
+            history_file: dir.join("history.json"),
             db_file: dir.join("index.db"),
             log_dir: dir.join("logs"),
         }

@@ -17,6 +17,10 @@ struct BarsOutput {
     edited: bool,
     add: bool,
     close: Option<u32>,
+    /// The ▾ button of the first bar was clicked.
+    toggle_history: bool,
+    /// Screen rect of the first bar's text field, where the dropdown hangs.
+    first_field: Option<Rect>,
 }
 
 /// Per-frame facts shared by every bar row.
@@ -28,6 +32,7 @@ struct RowParams {
     /// More than one bar: reserve the "AND" gutter on every row so all fields line up.
     several: bool,
     focus_bar: Option<u32>,
+    history_tip: String,
 }
 
 impl App {
@@ -46,6 +51,7 @@ impl App {
             can_add: self.search.can_add(),
             several: self.search.bars.len() > 1,
             focus_bar: self.search.focus_bar.take(),
+            history_tip: "Search history (Alt+Down)".to_owned(),
         };
         let mut out = BarsOutput::default();
         for bar in &mut self.search.bars {
@@ -53,6 +59,12 @@ impl App {
         }
         ui.add_space(2.0);
 
+        if out.toggle_history {
+            self.toggle_history();
+        }
+        if let (true, Some(field)) = (self.dropdown.open, out.first_field) {
+            self.history_dropdown(ui, field);
+        }
         if out.edited {
             self.resubmit_search();
         }
@@ -97,12 +109,25 @@ fn bar_row(ui: &mut Ui, bar: &mut SearchBar, p: &RowParams, out: &mut BarsOutput
                 })
                 .margin(Margin {
                     left: 4,
-                    right: 6 + button as i8,
+                    right: 6 + (if first { 2.0 * button } else { button }) as i8,
                     top: 2,
                     bottom: 2,
                 })
                 .desired_width(f32::INFINITY),
         );
+        if first {
+            out.first_field = Some(response.rect);
+            let chevron_slot = Rect::from_min_size(
+                egui::pos2(response.rect.right() - 2.0 * button - 2.0, response.rect.top()),
+                vec2(button, response.rect.height()),
+            );
+            let chevron = ui
+                .put(chevron_slot, |ui: &mut Ui| {
+                    glyph_button(ui, Glyph::ChevronDown, "Search history", true)
+                })
+                .on_hover_text(&p.history_tip);
+            out.toggle_history |= chevron.clicked();
+        }
         // The button sits inside the right edge of the field.
         let slot = Rect::from_min_size(
             egui::pos2(response.rect.right() - button - 2.0, response.rect.top()),
@@ -144,5 +169,82 @@ fn bar_row(ui: &mut Ui, bar: &mut SearchBar, p: &RowParams, out: &mut BarsOutput
             let muted = ui.visuals().error_fg_color.gamma_multiply(0.8);
             ui.label(RichText::new(error).small().color(muted));
         });
+    }
+}
+
+impl App {
+    /// The history list hanging under the first search bar: one line per remembered search with
+    /// its last use on the right. Keys are handled in [`App::history_keys`].
+    fn history_dropdown(&mut self, ui: &mut Ui, field: Rect) {
+        let entries = self.history_entries();
+        let date_format = self.config.ui.date_format.clone();
+        let mut picked = None;
+        let mut deleted = None;
+        let mut hovered = None;
+        let area = egui::Area::new(egui::Id::new("everythux_history_dropdown"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(field.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_width(field.width().max(240.0));
+                    if entries.is_empty() {
+                        ui.weak("No searches yet");
+                        return;
+                    }
+                    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                        for (i, entry) in entries.iter().enumerate() {
+                            let selected = i == self.dropdown.selected;
+                            let when = crate::format::format_local(
+                                entry.last_used.saturating_mul(1_000_000_000),
+                                &date_format,
+                            );
+                            let row = ui.horizontal(|ui| {
+                                let label = ui.selectable_label(selected, entry.label());
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.weak(when);
+                                });
+                                label
+                            });
+                            let label = row.inner;
+                            if label.clicked() {
+                                picked = Some(entry.clone());
+                            }
+                            if label.hovered() {
+                                hovered = Some(i);
+                            }
+                            label.context_menu(|ui| {
+                                if ui.button("Forget this search").clicked() {
+                                    deleted = Some(entry.clone());
+                                    ui.close();
+                                }
+                            });
+                            if selected {
+                                label.scroll_to_me(None);
+                            }
+                        }
+                    });
+                    ui.separator();
+                    ui.weak("Enter runs · Shift+Delete forgets · Esc closes");
+                });
+            });
+        // Only a moving pointer takes the highlight, so the arrow keys are not undone by a
+        // pointer that rests over a line.
+        if let Some(i) = hovered.filter(|_| ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO)) {
+            self.dropdown.selected = i;
+        }
+        // A click anywhere else closes it.
+        let clicked_away = ui.input(|i| {
+            i.pointer.any_pressed()
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| !area.response.rect.contains(p) && !field.contains(p))
+        });
+        if let Some(entry) = deleted {
+            self.delete_history(&entry);
+        } else if let Some(entry) = picked {
+            self.pick_history(&entry);
+        } else if clicked_away {
+            self.dropdown.open = false;
+        }
     }
 }

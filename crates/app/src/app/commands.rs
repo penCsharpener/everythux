@@ -155,6 +155,7 @@ impl App {
             }
             Command::SwitchFocus => self.switch_focus(),
             Command::Open => {
+                self.record_history();
                 let effects = self.open_selection();
                 self.apply_effects(effects);
             }

@@ -27,6 +27,8 @@ use everythux_platform::udisks::BlockDevice;
 use everythux_preview::{PreviewLimits, PreviewResult, TextEncoding};
 use everythux_search::{SearchRequest, SearchResults};
 
+use everythux_core::history::SearchHistory;
+
 use crate::model::{PropTarget, PropertiesInfo};
 
 /// Per source of a paste: its new path, or why it failed.
@@ -203,4 +205,9 @@ pub(crate) trait Backend {
     fn category(&self, ext: &str) -> Category;
     /// The JSON config file the app loads and saves.
     fn config_path(&self) -> PathBuf;
+    /// Reads the saved search history (blocking; called once at startup). An unreadable file is
+    /// an empty history.
+    fn load_history(&self) -> SearchHistory;
+    /// Saves the search history in the background.
+    fn save_history(&self, history: &SearchHistory);
 }

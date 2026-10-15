@@ -42,6 +42,8 @@ pub(crate) enum Glyph {
     Plus,
     /// `×`: close something.
     Cross,
+    /// A downward chevron: opens a drop-down list.
+    ChevronDown,
     /// `Aa`: case-sensitive matching.
     MatchCase,
     /// A path with a slash: match the full path.
@@ -136,6 +138,11 @@ fn paint_glyph(ui: &Ui, rect: Rect, glyph: Glyph, color: Color32) {
         Glyph::Cross => {
             line(r.left_top(), r.right_bottom());
             line(r.right_top(), r.left_bottom());
+        }
+        Glyph::ChevronDown => {
+            let c = r.center();
+            line(pos2(r.left(), c.y - 2.0), pos2(c.x, c.y + 2.0));
+            line(pos2(c.x, c.y + 2.0), pos2(r.right(), c.y - 2.0));
         }
         Glyph::MatchCase => text("Aa"),
         Glyph::Regex => text(".*"),

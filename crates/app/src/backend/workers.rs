@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use everythux_core::config::Config;
+use everythux_core::history::SearchHistory;
 
 use super::{BackendEvent, Compute};
 
@@ -98,13 +99,59 @@ where
     }
 }
 
+/// Hands values to a background thread that writes only the newest one after a quiet period of
+/// `debounce`. Dropping it flushes the pending value.
+#[derive(Debug)]
+struct Debounced<T> {
+    tx: Option<Sender<T>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl<T: Send + 'static> Debounced<T> {
+    fn start(name: &str, debounce: Duration, mut write: impl FnMut(&T) + Send + 'static) -> Self {
+        let (tx, rx) = crossbeam_channel::unbounded::<T>();
+        let thread = std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(move || {
+                while let Ok(mut value) = rx.recv() {
+                    loop {
+                        match rx.recv_timeout(debounce) {
+                            Ok(newer) => value = newer,
+                            Err(RecvTimeoutError::Timeout) => break,
+                            Err(RecvTimeoutError::Disconnected) => {
+                                write(&value);
+                                return;
+                            }
+                        }
+                    }
+                    write(&value);
+                }
+            })
+            .map_err(|e| tracing::error!(error = %e, name, "cannot spawn writer thread"))
+            .ok();
+        Self { tx: Some(tx), thread }
+    }
+
+    fn send(&self, value: T) {
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(value);
+        }
+    }
+}
+
+impl<T> Drop for Debounced<T> {
+    fn drop(&mut self) {
+        self.tx = None;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// Writes the config on a background thread, at most once per quiet period of
 /// [`CONFIG_DEBOUNCE`]. Dropping it flushes the pending write.
 #[derive(Debug)]
-pub(super) struct ConfigSaver {
-    tx: Option<Sender<Config>>,
-    thread: Option<JoinHandle<()>>,
-}
+pub(super) struct ConfigSaver(Debounced<Config>);
 
 impl ConfigSaver {
     pub(super) fn start(
@@ -113,49 +160,43 @@ impl ConfigSaver {
         events: Sender<BackendEvent>,
         ctx: egui::Context,
     ) -> Self {
-        let (tx, rx) = crossbeam_channel::unbounded::<Config>();
-        let thread = std::thread::Builder::new()
-            .name("everythux-config-writer".to_owned())
-            .spawn(move || {
-                let save = |config: &Config| {
-                    if let Err(e) = config.save(&path) {
-                        tracing::error!(error = %e, "cannot save config");
-                        let _ = events.send(BackendEvent::ConfigSaveFailed(e.to_string()));
-                        ctx.request_repaint();
-                    }
-                };
-                while let Ok(mut config) = rx.recv() {
-                    loop {
-                        match rx.recv_timeout(debounce) {
-                            Ok(newer) => config = newer,
-                            Err(RecvTimeoutError::Timeout) => break,
-                            Err(RecvTimeoutError::Disconnected) => {
-                                save(&config);
-                                return;
-                            }
-                        }
-                    }
-                    save(&config);
+        Self(Debounced::start(
+            "everythux-config-writer",
+            debounce,
+            move |config: &Config| {
+                if let Err(e) = config.save(&path) {
+                    tracing::error!(error = %e, "cannot save config");
+                    let _ = events.send(BackendEvent::ConfigSaveFailed(e.to_string()));
+                    ctx.request_repaint();
                 }
-            })
-            .map_err(|e| tracing::error!(error = %e, "cannot spawn config writer"))
-            .ok();
-        Self { tx: Some(tx), thread }
+            },
+        ))
     }
 
     pub(super) fn save(&self, config: Config) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(config);
-        }
+        self.0.send(config);
     }
 }
 
-impl Drop for ConfigSaver {
-    fn drop(&mut self) {
-        self.tx = None;
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+/// Writes the search history the same way as [`ConfigSaver`] writes the config.
+#[derive(Debug)]
+pub(super) struct HistorySaver(Debounced<SearchHistory>);
+
+impl HistorySaver {
+    pub(super) fn start(path: PathBuf, debounce: Duration) -> Self {
+        Self(Debounced::start(
+            "everythux-history-writer",
+            debounce,
+            move |history: &SearchHistory| {
+                if let Err(e) = history.save(&path) {
+                    tracing::error!(error = %e, "cannot save the search history");
+                }
+            },
+        ))
+    }
+
+    pub(super) fn save(&self, history: SearchHistory) {
+        self.0.send(history);
     }
 }
 

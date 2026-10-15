@@ -96,6 +96,19 @@ impl SearchState {
         self.bars.len() < MAX_SEARCH_BARS
     }
 
+    /// Replaces the bars with one per text (as many as fit), the way a remembered search is
+    /// restored. An empty list leaves a single empty bar.
+    pub(crate) fn set_texts(&mut self, texts: &[String]) {
+        self.bars.truncate(1);
+        self.bars[0].text = texts.first().cloned().unwrap_or_default();
+        self.bars[0].error = None;
+        for text in texts.iter().skip(1) {
+            if let Some(bar) = self.add().and_then(|id| self.bar_mut(id)) {
+                bar.text.clone_from(text);
+            }
+        }
+    }
+
     /// Appends an empty bar and returns its id, or `None` at the limit.
     pub(crate) fn add(&mut self) -> Option<u32> {
         if !self.can_add() {

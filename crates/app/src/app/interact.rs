@@ -395,7 +395,10 @@ impl App {
     pub(crate) fn apply_effects(&mut self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
-                Effect::OpenDefault(path) => self.backend.platform(PlatformAction::OpenDefault(path)),
+                Effect::OpenDefault(path) => {
+                    self.record_history();
+                    self.backend.platform(PlatformAction::OpenDefault(path));
+                }
                 Effect::ShowItem(path) => self.backend.platform(PlatformAction::ShowItem(path)),
                 Effect::ShowProperties(target) => {
                     self.backend.platform(PlatformAction::ShowProperties(target));

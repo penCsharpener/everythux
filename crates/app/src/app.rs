@@ -9,6 +9,7 @@ mod commands;
 mod context_menu;
 mod events;
 mod frame;
+mod history;
 mod interact;
 mod rename;
 mod search;
@@ -143,6 +144,10 @@ pub(crate) struct App {
     /// Show only duplicate files (same name and size) among the matches. Not persisted: a list that
     /// silently starts filtered would be confusing.
     pub(crate) duplicates_only: bool,
+    /// Every search ever used, remembered across sessions.
+    pub(crate) history: everythux_core::history::SearchHistory,
+    /// The history dropdown of the first search bar.
+    pub(crate) dropdown: history::HistoryDropdown,
 }
 
 impl std::fmt::Debug for App {
@@ -163,6 +168,7 @@ impl App {
         config: Config,
         startup_warnings: Vec<String>,
     ) -> Self {
+        let history = backend.load_history();
         let bindings = Bindings::from_config(&config.keybindings);
         let banners = startup_warnings
             .into_iter()
@@ -201,6 +207,8 @@ impl App {
             pointer: None,
             quit_requested: false,
             duplicates_only: false,
+            history,
+            dropdown: history::HistoryDropdown::default(),
         };
         app.apply_theme();
         app.backend.load_actions();

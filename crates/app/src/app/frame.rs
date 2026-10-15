@@ -80,6 +80,7 @@ impl App {
         self.expire_toasts();
         self.tick_slow_click();
 
+        self.history_keys(&ctx);
         // Consume shortcuts before any widget exists, so the focused search box cannot swallow them.
         for command in self.read_input_commands(&ctx) {
             self.run_command(command);
