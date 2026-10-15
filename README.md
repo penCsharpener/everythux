@@ -20,6 +20,7 @@ Written in Rust, focused on ext4, backed by SQLite.
 - Double-click a **Path** cell to open the folder with the file selected. Double-click **Size** or
   **Date Modified** to open the folder's properties. Double-click **Name** to open the file.
 - `F2` (or Right-click → Rename…) renames the selected file or folder right in the list; the status bar offers Undo.
+- `Delete` moves the selected items to the trash; `Shift+Delete` (or Right-click → Delete permanently…) deletes them for good after a confirmation.
 - `Ctrl+Shift+R` rebuilds the index. `F5` runs a quick rescan. You can also re-index a single volume or folder.
 - `Ctrl+Shift+Click` on a path excludes it and opens a popup to refine the rule. Exclusions support globs,
   regexes and scopes (`node_modules`, `bin` under `/home/*`, …).

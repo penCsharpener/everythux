@@ -55,6 +55,9 @@ pub(crate) enum PlatformAction {
     /// Move these to the trash (the outcome arrives as [`BackendEvent::Trashed`], not as
     /// [`BackendEvent::Platform`]).
     Trash(Vec<PathBuf>),
+    /// Delete these permanently (the outcome arrives as [`BackendEvent::Deleted`], not as
+    /// [`BackendEvent::Platform`]).
+    Delete(Vec<PathBuf>),
     /// Rename `from` inside its folder (blocking `rename(2)`; the outcome arrives as
     /// [`BackendEvent::Renamed`], not as [`BackendEvent::Platform`]). `undo` marks a rename that
     /// reverts an earlier one.
@@ -80,6 +83,7 @@ impl PlatformAction {
             Self::CutFiles(paths) => format!("Cut {} file(s) to the clipboard", paths.len()),
             Self::Paste { dest } => format!("Paste into {}", dest.display()),
             Self::Trash(paths) => format!("Move {} item(s) to the trash", paths.len()),
+            Self::Delete(paths) => format!("Delete {} item(s) permanently", paths.len()),
             Self::Rename { from, new_name, .. } => {
                 format!("Rename {} to {}", from.display(), new_name.to_string_lossy())
             }
@@ -153,6 +157,8 @@ pub(crate) enum BackendEvent {
     },
     /// Outcome of [`PlatformAction::Trash`], one result per path.
     Trashed(Vec<(PathBuf, Result<(), String>)>),
+    /// Outcome of [`PlatformAction::Delete`], one result per path.
+    Deleted(Vec<(PathBuf, Result<(), String>)>),
     /// The installed applications and file actions, read from the XDG directories.
     Actions(Arc<ActionCatalog>),
     Devices(Result<Vec<BlockDevice>, String>),

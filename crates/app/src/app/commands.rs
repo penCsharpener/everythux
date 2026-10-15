@@ -76,6 +76,12 @@ pub(crate) enum Command {
     ShowInFolder,
     /// `F2`: rename the selected entry inline.
     Rename,
+    /// `Delete`: move the selection to the trash.
+    Trash,
+    /// `Shift+Delete`: ask, then delete the selection permanently.
+    Delete,
+    /// "Delete" in the confirmation dialog.
+    ConfirmDelete,
     Copy(CopyKind),
     Navigate(Nav, bool),
     ToggleColumn(ColumnId),
@@ -143,14 +149,7 @@ impl App {
                 self.windows.about = true;
                 self.open_popup(PopupId::About);
             }
-            Command::Escape => {
-                if !self.close_topmost_popup() {
-                    let bar = self.focused_bar(true).unwrap_or(FIRST_BAR);
-                    if self.search.bar_mut(bar).is_some_and(|b| !b.text.is_empty()) {
-                        self.set_bar_text(bar, "");
-                    }
-                }
-            }
+            Command::Escape => self.escape(),
             Command::NewTab => self.new_tab(),
             Command::CloseTab => self.close_tab(self.active_tab),
             Command::CloseTabAt(index) => self.close_tab(index),
@@ -173,6 +172,12 @@ impl App {
                 self.apply_effects(effects);
             }
             Command::Rename => self.rename_selected(),
+            Command::Trash => {
+                let effects = self.trash_selection();
+                self.apply_effects(effects);
+            }
+            Command::Delete => self.request_delete(self.selected_paths()),
+            Command::ConfirmDelete => self.confirm_delete(),
             Command::Copy(kind) => {
                 let effects = self.copy_selection(kind);
                 self.apply_effects(effects);
@@ -181,6 +186,16 @@ impl App {
             Command::ToggleColumn(id) => self.toggle_column(id),
             Command::SetTheme(theme) => self.set_theme(theme),
             Command::SetSizeFormat(format) => self.set_size_format(format),
+        }
+    }
+
+    /// `Escape`: closes the topmost popup, else clears the focused (or first) search bar.
+    fn escape(&mut self) {
+        if !self.close_topmost_popup() {
+            let bar = self.focused_bar(true).unwrap_or(FIRST_BAR);
+            if self.search.bar_mut(bar).is_some_and(|b| !b.text.is_empty()) {
+                self.set_bar_text(bar, "");
+            }
         }
     }
 

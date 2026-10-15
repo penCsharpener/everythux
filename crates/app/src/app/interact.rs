@@ -57,6 +57,8 @@ pub(crate) enum Effect {
     PasteInto(PathBuf),
     /// Move these to the trash.
     Trash(Vec<PathBuf>),
+    /// Ask before deleting these permanently.
+    ConfirmDelete(Vec<PathBuf>),
 }
 
 /// Keyboard navigation in the table.
@@ -100,6 +102,8 @@ pub(crate) enum ContextAction {
     Paste,
     /// Move the selection to the trash.
     Trash,
+    /// Delete the selection permanently, after a confirmation.
+    Delete,
 }
 
 impl App {
@@ -269,6 +273,14 @@ impl App {
                     vec![Effect::Trash(paths)]
                 }
             }
+            ContextAction::Delete => {
+                let paths = self.context_paths(row);
+                if paths.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Effect::ConfirmDelete(paths)]
+                }
+            }
             ContextAction::Reindex(mode) => single(
                 self.reindex_target(row)
                     .map(|path| Effect::Reindex { path, mode }),
@@ -333,6 +345,44 @@ impl App {
             Vec::new()
         } else {
             vec![Effect::CopyText(lines.join("\n"))]
+        }
+    }
+
+    /// The full paths of the selected rows.
+    pub(crate) fn selected_paths(&self) -> Vec<PathBuf> {
+        let Some(results) = &self.results else {
+            return Vec::new();
+        };
+        self.selection
+            .rows()
+            .filter_map(|row| results.full_path(row))
+            .collect()
+    }
+
+    /// `Delete`: move the selection to the trash.
+    pub(crate) fn trash_selection(&self) -> Vec<Effect> {
+        let paths = self.selected_paths();
+        if paths.is_empty() {
+            Vec::new()
+        } else {
+            vec![Effect::Trash(paths)]
+        }
+    }
+
+    /// Opens the "Delete permanently?" dialog for `paths` (nothing happens for an empty list).
+    pub(crate) fn request_delete(&mut self, paths: Vec<PathBuf>) {
+        if paths.is_empty() {
+            return;
+        }
+        self.windows.confirm_delete = Some(paths);
+        self.open_popup(super::PopupId::ConfirmDelete);
+    }
+
+    /// "Delete" in the confirmation dialog: hands the waiting paths to the backend.
+    pub(crate) fn confirm_delete(&mut self) {
+        if let Some(paths) = self.windows.confirm_delete.take() {
+            self.windows.order.retain(|p| *p != super::PopupId::ConfirmDelete);
+            self.backend.platform(PlatformAction::Delete(paths));
         }
     }
 
@@ -422,6 +472,7 @@ impl App {
                 Effect::CutFiles(paths) => self.backend.platform(PlatformAction::CutFiles(paths)),
                 Effect::PasteInto(dest) => self.backend.platform(PlatformAction::Paste { dest }),
                 Effect::Trash(paths) => self.backend.platform(PlatformAction::Trash(paths)),
+                Effect::ConfirmDelete(paths) => self.request_delete(paths),
                 Effect::CopyText(text) => {
                     let count = text.lines().count();
                     self.ctx.copy_text(text);

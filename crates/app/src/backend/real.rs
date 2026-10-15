@@ -345,6 +345,9 @@ fn handle_platform_action(action: PlatformAction) -> Vec<BackendEvent> {
             .collect();
         return vec![BackendEvent::Trashed(results)];
     }
+    if let PlatformAction::Delete(paths) = action {
+        return vec![BackendEvent::Deleted(fileops::delete_paths(&paths))];
+    }
     let result = match &action {
         PlatformAction::Launch { launcher, paths } => {
             everythux_platform::actions::launch(launcher, paths).map(|_| Method::Launched)
@@ -358,9 +361,10 @@ fn handle_platform_action(action: PlatformAction) -> Vec<BackendEvent> {
         PlatformAction::OpenDefault(p) => file_manager::open_default(p),
         PlatformAction::ShowItem(p) => file_manager::show_item(p),
         PlatformAction::ShowProperties(t) => file_manager::show_properties(&t.path),
-        PlatformAction::Rename { .. } | PlatformAction::Trash(_) | PlatformAction::Paste { .. } => {
-            Err(PlatformError::Unsupported("handled separately"))
-        }
+        PlatformAction::Rename { .. }
+        | PlatformAction::Trash(_)
+        | PlatformAction::Delete(_)
+        | PlatformAction::Paste { .. } => Err(PlatformError::Unsupported("handled separately")),
     };
     vec![BackendEvent::Platform { action, result }]
 }

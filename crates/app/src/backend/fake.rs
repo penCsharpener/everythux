@@ -254,7 +254,10 @@ impl Backend for FakeBackend {
         };
         if matches!(
             action,
-            PlatformAction::Rename { .. } | PlatformAction::Trash(_) | PlatformAction::Paste { .. }
+            PlatformAction::Rename { .. }
+                | PlatformAction::Trash(_)
+                | PlatformAction::Delete(_)
+                | PlatformAction::Paste { .. }
         ) {
             // These answer with their own events, which the test injects.
             return;

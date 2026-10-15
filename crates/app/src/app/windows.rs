@@ -8,6 +8,7 @@ impl App {
         let w = &self.windows;
         match id {
             PopupId::ConfirmReindex => w.confirm_reindex,
+            PopupId::ConfirmDelete => w.confirm_delete.is_some(),
             PopupId::ExclusionPopup => w.exclusion_popup.is_some(),
             PopupId::ExclusionEditor => w.exclusion_editor.open,
             PopupId::Volumes => w.volumes.open,
@@ -29,6 +30,7 @@ impl App {
     pub(crate) fn close_popup(&mut self, id: PopupId) {
         match id {
             PopupId::ConfirmReindex => self.windows.confirm_reindex = false,
+            PopupId::ConfirmDelete => self.windows.confirm_delete = None,
             PopupId::ExclusionPopup => self.finish_exclusion_popup(),
             PopupId::ExclusionEditor => self.windows.exclusion_editor.open = false,
             PopupId::Volumes => self.windows.volumes.open = false,

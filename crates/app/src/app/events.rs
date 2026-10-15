@@ -13,6 +13,43 @@ const TOAST_SECONDS: f64 = 6.0;
 /// Messages with an "Undo" button stay a little longer.
 const TOAST_UNDO_SECONDS: f64 = 10.0;
 
+/// How files left the list: moved to the trash or deleted for good.
+#[derive(Debug, Clone, Copy)]
+enum Removal {
+    Trash,
+    Delete,
+}
+
+impl Removal {
+    fn failure(self, name: &str, error: &str) -> String {
+        match self {
+            Self::Trash => format!("Cannot move {name} to the trash: {error}"),
+            Self::Delete => format!("Cannot delete {name}: {error}"),
+        }
+    }
+
+    fn partial(self, done: usize, failed: usize, name: &str, error: &str) -> String {
+        let verb = match self {
+            Self::Trash => "Moved",
+            Self::Delete => "Deleted",
+        };
+        let target = match self {
+            Self::Trash => " to the trash",
+            Self::Delete => "",
+        };
+        format!("{verb} {done}{target}, {failed} failed (first: {name}: {error})")
+    }
+
+    fn success(self, name: Option<&str>, count: usize) -> String {
+        match (self, name) {
+            (Self::Trash, Some(n)) => format!("Moved {n} to the trash"),
+            (Self::Trash, None) => format!("Moved {count} items to the trash"),
+            (Self::Delete, Some(n)) => format!("Deleted {n}"),
+            (Self::Delete, None) => format!("Deleted {count} items"),
+        }
+    }
+}
+
 fn method_label(method: Method) -> &'static str {
     match method {
         Method::FileManager1 => "FileManager1",
@@ -43,7 +80,8 @@ impl App {
                 undo,
                 result,
             } => self.on_renamed(&from, &new_name, undo, result),
-            BackendEvent::Trashed(results) => self.on_trashed(&results),
+            BackendEvent::Trashed(results) => self.on_removed(&results, Removal::Trash),
+            BackendEvent::Deleted(results) => self.on_removed(&results, Removal::Delete),
             BackendEvent::Pasted { dest, cut, results } => self.on_pasted(&dest, cut, results),
             BackendEvent::Actions(catalog) => self.actions = catalog,
             BackendEvent::Devices(result) => self.on_devices(result),
@@ -104,7 +142,10 @@ impl App {
             }
             // Renames and trashing report through their own events.
             (
-                PlatformAction::Rename { .. } | PlatformAction::Trash(_) | PlatformAction::Paste { .. },
+                PlatformAction::Rename { .. }
+                | PlatformAction::Trash(_)
+                | PlatformAction::Delete(_)
+                | PlatformAction::Paste { .. },
                 Ok(_),
             ) => {}
             (PlatformAction::Launch { launcher, .. }, Ok(_)) => {
@@ -191,9 +232,9 @@ impl App {
         }
     }
 
-    /// Outcome of moving files to the trash: a summary toast, and a quick rescan of the folders
+    /// Outcome of trashing or deleting files: a summary toast, and a quick rescan of the folders
     /// they left so the list stops showing them.
-    fn on_trashed(&mut self, results: &[(std::path::PathBuf, Result<(), String>)]) {
+    fn on_removed(&mut self, results: &[(std::path::PathBuf, Result<(), String>)], how: Removal) {
         let moved = results.iter().filter(|(_, r)| r.is_ok()).count();
         if let Some((path, Err(error))) = results.iter().find(|(_, r)| r.is_err()) {
             let name = path.file_name().map_or_else(
@@ -202,21 +243,20 @@ impl App {
             );
             let failed = results.len() - moved;
             let text = if failed == 1 {
-                format!("Cannot move {name} to the trash: {error}")
+                how.failure(&name, error)
             } else {
-                format!("Moved {moved} to the trash, {failed} failed (first: {name}: {error})")
+                how.partial(moved, failed, &name, error)
             };
             self.toast(text, ToastKind::Error);
         } else {
-            let text = match results {
-                [(path, _)] => format!(
-                    "Moved {} to the trash",
+            let single = match results {
+                [(path, _)] => Some(
                     path.file_name()
-                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
                 ),
-                _ => format!("Moved {moved} items to the trash"),
+                _ => None,
             };
-            self.toast(text, ToastKind::Info);
+            self.toast(how.success(single.as_deref(), moved), ToastKind::Info);
         }
         let mut folders: Vec<std::path::PathBuf> = results
             .iter()

@@ -179,6 +179,14 @@ impl App {
                     }
                 }
             }
+            if !text_focused && !editing && !popup_open {
+                // Shift first: egui ignores an extra Shift when matching the plain key.
+                if i.consume_key(Modifiers::SHIFT, Key::Delete) {
+                    commands.push(Command::Delete);
+                } else if i.consume_key(Modifiers::NONE, Key::Delete) {
+                    commands.push(Command::Trash);
+                }
+            }
             if !text_focused && !editing {
                 let extend = i.modifiers.shift;
                 for (key, nav) in [(Key::Home, Nav::Home), (Key::End, Nav::End)] {

@@ -366,10 +366,20 @@ fn context_menu(
         ui.close();
     }
     let trash = ui
-        .add_enabled(online, egui::Button::new("Move to Trash"))
+        .add_enabled(online, egui::Button::new("Move to Trash").shortcut_text("Del"))
         .on_disabled_hover_text("The volume is offline");
     if trash.clicked() {
         out.push((row, ContextAction::Trash));
+        ui.close();
+    }
+    let delete = ui
+        .add_enabled(
+            online,
+            egui::Button::new("Delete permanently…").shortcut_text("Shift+Del"),
+        )
+        .on_disabled_hover_text("The volume is offline");
+    if delete.clicked() {
+        out.push((row, ContextAction::Delete));
         ui.close();
     }
     pick(ui, out, row, "Properties…", ContextAction::Properties);

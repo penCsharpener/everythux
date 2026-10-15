@@ -119,6 +119,28 @@ pub fn rename_in_place(path: &Path, new_name: &OsStr) -> Result<PathBuf, RenameE
 /// Outcome of pasting one source: its new path, or why it failed.
 pub type PasteResult = (PathBuf, Result<PathBuf, String>);
 
+/// Permanently deletes every path of `paths`: files and symlinks are unlinked, folders are removed
+/// with their contents. A symlink is removed itself, never followed.
+///
+/// One result per path, in order; a failure does not stop the others.
+///
+/// This is **blocking** filesystem I/O: call it from a worker thread.
+pub fn delete_paths(paths: &[PathBuf]) -> Vec<(PathBuf, Result<(), String>)> {
+    paths
+        .iter()
+        .map(|path| {
+            let result = std::fs::symlink_metadata(path).and_then(|meta| {
+                if meta.is_dir() {
+                    std::fs::remove_dir_all(path)
+                } else {
+                    std::fs::remove_file(path)
+                }
+            });
+            (path.clone(), result.map_err(|e| e.to_string()))
+        })
+        .collect()
+}
+
 /// Copies (or, with `cut`, moves) every path of `sources` into the folder `dest`.
 ///
 /// Nothing is ever overwritten: a name that is taken gets ` (copy)`, ` (copy 2)`, … before the
@@ -251,6 +273,29 @@ mod tests {
     use super::*;
     use std::ffi::OsString;
     use std::fs;
+
+    #[test]
+    fn delete_paths_removes_files_folders_and_links_without_following() {
+        let dir = tempfile::tempdir().unwrap();
+        let keep = dir.path().join("keep");
+        fs::create_dir(&keep).unwrap();
+        fs::write(keep.join("data"), b"x").unwrap();
+        let file = dir.path().join("a.txt");
+        fs::write(&file, b"x").unwrap();
+        let tree = dir.path().join("tree");
+        fs::create_dir_all(tree.join("sub")).unwrap();
+        fs::write(tree.join("sub/b"), b"x").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&keep, &link).unwrap();
+        let missing = dir.path().join("missing");
+
+        let results = delete_paths(&[file.clone(), tree.clone(), link.clone(), missing.clone()]);
+        assert!(results[..3].iter().all(|(_, r)| r.is_ok()));
+        assert!(results[3].1.is_err());
+        assert!(!file.exists() && !tree.exists());
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(keep.join("data").exists(), "the link target must survive");
+    }
 
     fn invalid(name: &OsStr) -> bool {
         matches!(validate_name(name), Err(RenameError::InvalidName(_)))

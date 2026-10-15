@@ -61,6 +61,7 @@ pub(crate) const ROW_HEIGHT: f32 = 20.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PopupId {
     ConfirmReindex,
+    ConfirmDelete,
     ExclusionPopup,
     ExclusionEditor,
     Volumes,
@@ -86,6 +87,8 @@ pub(crate) struct BookmarksWindow {
 #[derive(Debug, Default)]
 pub(crate) struct Windows {
     pub(crate) confirm_reindex: bool,
+    /// Paths waiting for the user's confirmation to be deleted permanently.
+    pub(crate) confirm_delete: Option<Vec<std::path::PathBuf>>,
     pub(crate) exclusion_popup: Option<ExclusionPopup>,
     pub(crate) exclusion_editor: ExclusionEditor,
     pub(crate) volumes: VolumesWindow,

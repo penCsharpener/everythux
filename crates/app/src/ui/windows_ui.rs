@@ -36,6 +36,7 @@ impl App {
     /// Shows every open secondary window.
     pub(crate) fn show_windows(&mut self, ctx: &Context) {
         self.confirm_reindex_modal(ctx);
+        self.confirm_delete_modal(ctx);
         self.exclusion_popup_window(ctx);
         self.exclusion_editor_window(ctx);
         self.volumes_window(ctx);
@@ -60,6 +61,37 @@ impl App {
                     command = Some(Command::ConfirmFullReindex);
                 }
                 if ui.button("Keep running").clicked() {
+                    command = Some(Command::Escape);
+                }
+            });
+        });
+        if let Some(command) = command {
+            self.run_command(command);
+        }
+    }
+
+    fn confirm_delete_modal(&mut self, ctx: &Context) {
+        let Some(paths) = &self.windows.confirm_delete else {
+            return;
+        };
+        let text = match paths.as_slice() {
+            [one] => format!(
+                "Delete {} permanently? This cannot be undone.",
+                one.file_name()
+                    .map_or_else(|| one.display().to_string(), |n| n.to_string_lossy().into_owned())
+            ),
+            many => format!("Delete {} items permanently? This cannot be undone.", many.len()),
+        };
+        let mut command = None;
+        egui::Modal::new(egui::Id::new("everythux_confirm_delete")).show(ctx, |ui| {
+            ui.heading("Delete permanently");
+            ui.label(text);
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Delete").clicked() {
+                    command = Some(Command::ConfirmDelete);
+                }
+                if ui.button("Cancel").clicked() {
                     command = Some(Command::Escape);
                 }
             });

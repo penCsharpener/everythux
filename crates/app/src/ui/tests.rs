@@ -2243,7 +2243,7 @@ mod context_menu {
         r.harness.run_steps(3);
         r.harness.get_by_label("notes.txt").click_secondary();
         r.harness.run_steps(4);
-        r.harness.get_by_label("Move to Trash").click();
+        r.harness.get_by_label_contains("Move to Trash").click();
         r.harness.run_steps(3);
         assert_eq!(
             r.fake.platform_actions(),
@@ -2338,6 +2338,81 @@ mod context_menu {
                 .toasts
                 .iter()
                 .any(|t| t.text.contains("Cannot move notes.txt") && t.text.contains("permission denied"))
+        );
+    }
+
+    #[test]
+    fn shift_delete_asks_then_deletes_permanently() {
+        let mut r = rig();
+        r.show_default();
+        r.harness.get_by_label("notes.txt").click();
+        r.harness.run_steps(3);
+        r.fake.clear();
+        r.harness.key_press_modifiers(Modifiers::SHIFT, Key::Delete);
+        r.harness.run_steps(3);
+        assert!(r.harness.state().windows.confirm_delete.is_some());
+        assert!(
+            r.fake.platform_actions().is_empty(),
+            "nothing before confirmation"
+        );
+        r.harness.get_by_label("Delete").click();
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [PlatformAction::Delete(vec![NOTES.into()])]
+        );
+        assert!(r.harness.state().windows.confirm_delete.is_none());
+    }
+
+    #[test]
+    fn delete_key_moves_the_selection_to_the_trash() {
+        let mut r = rig();
+        r.show_default();
+        r.harness.get_by_label("notes.txt").click();
+        r.harness.run_steps(3);
+        r.fake.clear();
+        r.harness.key_press(Key::Delete);
+        r.harness.run_steps(3);
+        assert_eq!(
+            r.fake.platform_actions(),
+            [PlatformAction::Trash(vec![NOTES.into()])]
+        );
+    }
+
+    #[test]
+    fn permanent_delete_can_be_cancelled_and_reports_the_outcome() {
+        let mut r = rig();
+        r.show_default();
+        r.harness.get_by_label("notes.txt").click_secondary();
+        r.harness.run_steps(4);
+        r.harness.get_by_label_contains("Delete permanently").click();
+        r.harness.run_steps(3);
+        r.fake.clear();
+        r.harness.get_by_label("Cancel").click();
+        r.harness.run_steps(3);
+        assert_eq!(r.fake.platform_actions(), Vec::<PlatformAction>::new());
+        assert!(r.harness.state().windows.confirm_delete.is_none());
+
+        r.fake.send(BackendEvent::Deleted(vec![(NOTES.into(), Ok(()))]));
+        r.harness.run_steps(2);
+        assert!(
+            r.harness
+                .state()
+                .toasts
+                .iter()
+                .any(|t| t.text.contains("Deleted notes.txt"))
+        );
+        r.fake.send(BackendEvent::Deleted(vec![(
+            NOTES.into(),
+            Err("permission denied".into()),
+        )]));
+        r.harness.run_steps(2);
+        assert!(
+            r.harness
+                .state()
+                .toasts
+                .iter()
+                .any(|t| t.text.contains("Cannot delete notes.txt"))
         );
     }
 
