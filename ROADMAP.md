@@ -43,6 +43,7 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
 - 0.12.1: zoomed image previews load the full-resolution image (up to the GPU texture size) and stay in a
   fixed-size frame; wheel zoom centres on the pointer.
 - 0.12.2: PDF previews page through the whole document (◀ ▶ buttons or the wheel over the page).
+- 0.12.3: zoomed image previews are panned by dragging, with the grab / grabbing hand cursors.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
