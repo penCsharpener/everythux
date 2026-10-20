@@ -52,6 +52,10 @@ impl App {
                     ui.label(&index_text);
                 }
             }
+            if let Some(text) = self.manual_index_text() {
+                ui.separator();
+                ui.label(text);
+            }
             if self.index.is_running() && ui.small_button("Cancel").clicked() {
                 command = Some(Command::CancelJob);
             }

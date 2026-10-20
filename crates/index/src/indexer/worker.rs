@@ -176,7 +176,7 @@ impl Worker {
 
     fn next_deadline(&self) -> Option<Instant> {
         let publish = self.dirty.then(|| self.last_publish + self.publish_interval());
-        let minutes = self.settings.indexer.scheduled_rescan_minutes;
+        let minutes = self.settings.indexer.effective_scheduled_rescan_minutes();
         let scheduled =
             (minutes > 0).then(|| self.last_scheduled + Duration::from_secs(u64::from(minutes) * 60));
         [publish, scheduled].into_iter().flatten().min()
@@ -184,7 +184,7 @@ impl Worker {
 
     fn on_timer(&mut self) {
         self.publish_if_due(false);
-        let minutes = self.settings.indexer.scheduled_rescan_minutes;
+        let minutes = self.settings.indexer.effective_scheduled_rescan_minutes();
         if minutes > 0 && self.last_scheduled.elapsed() >= Duration::from_secs(u64::from(minutes) * 60) {
             self.last_scheduled = Instant::now();
             self.shared.submit(Job::RescanAll(ScanMode::Quick));
@@ -197,10 +197,13 @@ impl Worker {
         if old.indexer.threads != self.settings.indexer.threads {
             self.pool = make_pool(self.settings.indexer.threads);
         }
-        if old.indexer.scheduled_rescan_minutes != self.settings.indexer.scheduled_rescan_minutes {
+        if old.indexer.effective_scheduled_rescan_minutes()
+            != self.settings.indexer.effective_scheduled_rescan_minutes()
+        {
             self.last_scheduled = Instant::now();
         }
-        let watch_changed = old.indexer.live_updates != self.settings.indexer.live_updates
+        let watch_changed = old.indexer.effective_live_updates()
+            != self.settings.indexer.effective_live_updates()
             || old.indexer.watch_roots != self.settings.indexer.watch_roots
             || old.exclusions != self.settings.exclusions
             || old.volumes != self.settings.volumes;
@@ -211,7 +214,7 @@ impl Worker {
 
     fn restart_watcher(&mut self) {
         self.watcher = None;
-        if !self.settings.indexer.live_updates {
+        if !self.settings.indexer.effective_live_updates() {
             return;
         }
         let volumes = self.store.volumes().unwrap_or_default();
@@ -401,6 +404,51 @@ mod tests {
             worker.last_scheduled.elapsed() < Duration::from_secs(5),
             "the schedule restarts"
         );
+    }
+
+    #[test]
+    fn manual_mode_has_no_timer_wake_ups_and_queues_no_scheduled_rescan() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut worker = idle_worker(dir.path(), 1);
+        worker.settings.indexer.automatic = false;
+        assert_eq!(worker.next_deadline(), None, "the schedule is ignored");
+        worker.last_scheduled = Instant::now()
+            .checked_sub(Duration::from_secs(3600))
+            .expect("monotonic clock far enough from its origin");
+        worker.on_timer();
+        assert!(
+            matches!(worker.shared.next_work(Some(Instant::now())), Work::Timeout),
+            "nothing is queued by the timer"
+        );
+        // Pending snapshots still wake the worker: they are the result of a user action.
+        worker.dirty = true;
+        assert!(worker.next_deadline().is_some());
+    }
+
+    #[test]
+    fn manual_mode_never_starts_the_watcher() {
+        let (db, tree) = (
+            tempfile::tempdir().expect("tempdir"),
+            tempfile::tempdir().expect("tempdir"),
+        );
+        let mut worker = idle_worker(db.path(), 0);
+        worker.settings.indexer.live_updates = true;
+        worker.settings.indexer.watch_roots = vec![tree.path().to_path_buf()];
+        worker.settings.volumes.include = vec![tree.path().to_path_buf()];
+        worker.settings.volumes.auto_discover_fs_types = Vec::new();
+        worker.startup();
+        assert!(worker.watcher.is_some(), "control: automatic mode watches");
+
+        let mut manual = worker.settings.clone();
+        manual.indexer.automatic = false;
+        worker.apply_settings(manual.clone());
+        assert!(worker.watcher.is_none(), "switching to manual stops the watcher");
+        worker.restart_watcher();
+        assert!(worker.watcher.is_none(), "and nothing restarts it");
+
+        manual.indexer.automatic = true;
+        worker.apply_settings(manual);
+        assert!(worker.watcher.is_some(), "switching back starts it again");
     }
 
     #[test]

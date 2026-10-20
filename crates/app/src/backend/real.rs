@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crossbeam_channel::{Receiver, Sender};
 use everythux_core::config::Config;
+use everythux_core::dirty::DirtyFolders;
 use everythux_core::paths::AppPaths;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{Indexer, IndexerSettings, Job};
@@ -17,7 +18,8 @@ use everythux_preview::{PreviewLimits, PreviewService, TextEncoding};
 use everythux_search::{SearchRequest, SearchService};
 
 use super::workers::{
-    CONFIG_DEBOUNCE, ConfigSaver, HistorySaver, forward, forward_index, spawn_compute_worker, spawn_worker,
+    CONFIG_DEBOUNCE, ConfigSaver, DirtySaver, HistorySaver, forward, forward_index, spawn_compute_worker,
+    spawn_worker,
 };
 use super::{Backend, BackendEvent, Compute, PlatformAction};
 use everythux_core::history::SearchHistory;
@@ -57,6 +59,8 @@ pub(crate) struct RealBackend {
     config_file: PathBuf,
     history_file: PathBuf,
     history_saver: HistorySaver,
+    dirty_file: PathBuf,
+    dirty_saver: DirtySaver,
 }
 
 impl RealBackend {
@@ -143,6 +147,8 @@ impl RealBackend {
                 config_file: paths.config_file.clone(),
                 history_file: paths.history_file.clone(),
                 history_saver: HistorySaver::start(paths.history_file.clone(), CONFIG_DEBOUNCE),
+                dirty_file: paths.dirty_file.clone(),
+                dirty_saver: DirtySaver::start(paths.dirty_file.clone(), CONFIG_DEBOUNCE),
             },
             rx,
         )
@@ -311,6 +317,17 @@ impl Backend for RealBackend {
 
     fn save_history(&self, history: &SearchHistory) {
         self.history_saver.save(history.clone());
+    }
+
+    fn load_dirty_folders(&self) -> DirtyFolders {
+        DirtyFolders::load(&self.dirty_file).unwrap_or_else(|error| {
+            tracing::warn!(%error, "cannot read the out-of-sync folders; starting empty");
+            DirtyFolders::default()
+        })
+    }
+
+    fn save_dirty_folders(&self, dirty: &DirtyFolders) {
+        self.dirty_saver.save(dirty.clone());
     }
 }
 

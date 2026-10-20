@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use egui::{Context, Grid, RichText, Ui};
+use egui::{Context, Grid, KeyboardShortcut, RichText, Ui};
 use everythux_index::ScanMode;
 
 use crate::app::{App, Command, Effect};
@@ -30,6 +30,24 @@ fn kind_text(kind: everythux_core::model::EntryKind) -> &'static str {
 
 fn selectable_value(ui: &mut Ui, text: &str) {
     ui.add(egui::Label::new(text).selectable(true).wrap());
+}
+
+/// Rows of the shortcuts window for the two index commands. They may share a key
+/// (Ctrl+Shift+R), and the indexing mode decides which one owns it: the other has no shortcut.
+fn index_shortcut_entries(
+    reindex: Option<KeyboardShortcut>,
+    update: Option<KeyboardShortcut>,
+) -> impl Iterator<Item = (String, &'static str, &'static str)> {
+    [
+        (reindex, "Full reindex of all volumes (background, cancellable)"),
+        (
+            update,
+            "Update the index: re-list the folders changed by file operations in Everythux, \
+             or quick-rescan all volumes when there are none",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(shortcut, text)| Some((d(shortcut?), "global", text)))
 }
 
 impl App {
@@ -258,16 +276,12 @@ impl App {
         }
         let b = &self.bindings;
         let exclude = self.config.keybindings.exclude_path_click.clone();
-        let entries: Vec<(String, &str, &str)> = vec![
+        let (reindex, update) = b.index_shortcuts(self.automatic_indexing());
+        let mut entries: Vec<(String, &str, &str)> = vec![
             (
                 "Typing".to_owned(),
                 "anywhere",
                 "Search (the search box is focused)",
-            ),
-            (
-                d(b.reindex_all),
-                "global",
-                "Full reindex of all volumes (background, cancellable)",
             ),
             (
                 "Double-click".to_owned(),
@@ -325,6 +339,10 @@ impl App {
             ),
             ("Ctrl+Q".to_owned(), "global", "Quit"),
         ];
+        // Right after "Typing": the index commands.
+        for (at, entry) in index_shortcut_entries(reindex, update).enumerate() {
+            entries.insert(1 + at, entry);
+        }
         let mut open = true;
         egui::Window::new("Keyboard shortcuts")
             .id(egui::Id::new("everythux_shortcuts"))

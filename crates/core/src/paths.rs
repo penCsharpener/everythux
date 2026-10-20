@@ -9,6 +9,9 @@ pub struct AppPaths {
     pub config_file: PathBuf,
     /// `history.json` next to the config file.
     pub history_file: PathBuf,
+    /// `dirty-folders.list` next to the config file: folders touched by in-app file operations
+    /// while automatic indexing is off.
+    pub dirty_file: PathBuf,
     /// `$XDG_DATA_HOME/everythux/index.db`
     pub db_file: PathBuf,
     /// `$XDG_STATE_HOME/everythux/` (falls back to the data dir)
@@ -29,6 +32,7 @@ impl AppPaths {
         let log_dir = dirs.state_dir().unwrap_or_else(|| dirs.data_dir()).to_path_buf();
         Some(Self {
             history_file: config_file.with_file_name("history.json"),
+            dirty_file: config_file.with_file_name("dirty-folders.list"),
             config_file,
             db_file,
             log_dir,
@@ -40,6 +44,7 @@ impl AppPaths {
         Self {
             config_file: dir.join("config.json"),
             history_file: dir.join("history.json"),
+            dirty_file: dir.join("dirty-folders.list"),
             db_file: dir.join("index.db"),
             log_dir: dir.join("logs"),
         }

@@ -108,24 +108,50 @@ impl App {
     }
 
     fn index_menu(&self, ui: &mut Ui, commands: &mut Vec<Command>) {
-        let b = &self.bindings;
+        let (reindex, update) = self.bindings.index_shortcuts(self.automatic_indexing());
+        let shortcut_text = |s: Option<egui::KeyboardShortcut>| s.map(describe_shortcut).unwrap_or_default();
+        let pending = self.dirty.len();
+        if ui
+            .add(Button::new("Update index").shortcut_text(shortcut_text(update)))
+            .on_hover_text(format!(
+                "Re-list the {pending} folder(s) changed by file operations in Everythux. \
+                 With none out of sync, quick-rescan all volumes instead."
+            ))
+            .clicked()
+        {
+            commands.push(Command::UpdateIndex);
+            ui.close();
+        }
         item(
             ui,
             "Reindex all",
-            &describe_shortcut(b.reindex_all),
+            &shortcut_text(reindex),
             commands,
             Command::FullReindex,
         );
         item(
             ui,
             "Quick rescan",
-            &describe_shortcut(b.quick_rescan),
+            &describe_shortcut(self.bindings.quick_rescan),
             commands,
             Command::QuickRescan,
         );
         ui.add_enabled_ui(self.index.is_running(), |ui| {
             item(ui, "Cancel current job", "", commands, Command::CancelJob);
         });
+        ui.separator();
+        let mut automatic = self.automatic_indexing();
+        if ui
+            .checkbox(&mut automatic, "Automatic indexing")
+            .on_hover_text(
+                "On: the index follows file changes (live updates), startup and scheduled rescans.\n\
+                 Off: no background work; update the index yourself. Everythux's own file \
+                 operations are remembered as out of sync.",
+            )
+            .changed()
+        {
+            commands.push(Command::ToggleAutomaticIndexing);
+        }
         ui.separator();
         item(ui, "Volumes…", "", commands, Command::OpenVolumes);
         item(ui, "Exclusions…", "", commands, Command::OpenExclusions);

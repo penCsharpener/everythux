@@ -423,6 +423,34 @@ fn full_reindex_matches_incremental_updates() {
 }
 
 #[test]
+fn refreshing_the_parents_of_a_moved_folder_updates_both_places() {
+    // The manual-mode refresh only knows the folders around an in-app move or rename.
+    let (db, tree) = (tmp(), tmp());
+    sample_tree(tree.path());
+    let (indexer, rx) = start_scanned(db.path(), settings(&[tree.path()]));
+    let before = listing(&indexer.snapshot(), tree.path());
+    assert!(before.contains_key("a/b/c.txt"));
+
+    std::fs::rename(tree.path().join("a/b"), tree.path().join("e/moved")).unwrap();
+    std::fs::rename(tree.path().join("a/d.TXT"), tree.path().join("a/renamed.TXT")).unwrap();
+    run_ok(
+        &indexer,
+        &rx,
+        Job::RefreshDirs(vec![tree.path().join("a"), tree.path().join("e")]),
+    );
+    let snap = eventually(&indexer, "moved folder", |s| {
+        listing(s, tree.path()).contains_key("e/moved/c.txt")
+    });
+    let rows = listing(&snap, tree.path());
+    assert!(
+        !rows.contains_key("a/b") && !rows.contains_key("a/b/c.txt"),
+        "{rows:?}"
+    );
+    assert!(rows.contains_key("a/renamed.TXT") && !rows.contains_key("a/d.TXT"));
+    check_invariants(&snap);
+}
+
+#[test]
 fn refresh_dirs_relists_exactly_the_given_folders() {
     let (db, tree) = (tmp(), tmp());
     sample_tree(tree.path());
@@ -592,6 +620,57 @@ fn restart_reuses_the_database_and_rescans_quickly() {
         matches!(e, IndexEvent::Finished { .. }).then_some(())
     });
     assert!(listing(&indexer.snapshot(), tree.path()).contains_key("while_away.txt"));
+}
+
+#[test]
+fn manual_mode_skips_the_startup_rescan_but_still_loads_the_stored_index() {
+    let (db, tree) = (tmp(), tmp());
+    sample_tree(tree.path());
+    let path = db.path().join("index.db");
+    {
+        let (_indexer, _rx) = start_scanned(db.path(), settings(&[tree.path()]));
+    }
+    TreeBuilder::new(tree.path()).file("while_away.txt", 1).unwrap();
+    let mut s = settings(&[tree.path()]);
+    s.indexer.rescan_on_startup = everythux_core::config::StartupRescan::Full;
+    s.indexer.scheduled_rescan_minutes = 1;
+    s.indexer.automatic = false;
+    let (indexer, rx) = Indexer::start(&path, s).unwrap();
+    let IndexEvent::SnapshotReady(stored) = wait_for(&rx, "snapshot", |e| match e {
+        IndexEvent::SnapshotReady(_) => Some(e.clone()),
+        _ => None,
+    }) else {
+        unreachable!()
+    };
+    assert!(
+        listing(&stored, tree.path()).contains_key("a/d.TXT"),
+        "the stored index is loaded"
+    );
+
+    // Jobs run in submission order and a startup scan would have been queued first, so the
+    // first job that starts is ours.
+    let id = indexer.submit(Job::ApplyExclusions);
+    let first = wait_for(&rx, "the first job", |e| match e {
+        IndexEvent::Started { job, .. } => Some(*job),
+        _ => None,
+    });
+    assert_eq!(first, id, "no startup rescan ran before it");
+    wait_done(&rx, id).stats();
+    assert!(!listing(&indexer.snapshot(), tree.path()).contains_key("while_away.txt"));
+
+    // An explicit request still works.
+    run_ok(&indexer, &rx, Job::RescanAll(ScanMode::Quick));
+    assert!(listing(&indexer.snapshot(), tree.path()).contains_key("while_away.txt"));
+}
+
+#[test]
+fn manual_mode_still_builds_an_empty_database_once() {
+    let (db, tree) = (tmp(), tmp());
+    sample_tree(tree.path());
+    let mut s = settings(&[tree.path()]);
+    s.indexer.automatic = false;
+    let (indexer, _rx) = start_scanned(db.path(), s);
+    assert!(listing(&indexer.snapshot(), tree.path()).contains_key("a/d.TXT"));
 }
 
 #[test]

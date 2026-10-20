@@ -218,6 +218,26 @@ impl App {
         } else {
             self.toast(format!("{verb} {done} item(s) into {folder}"), ToastKind::Info);
         }
+        let moved: Vec<(&std::path::Path, &std::path::Path)> = if cut {
+            results
+                .iter()
+                .filter_map(|(from, r)| Some((from.as_path(), r.as_ref().ok()?.as_path())))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let copied: Vec<&std::path::Path> = if cut {
+            Vec::new()
+        } else {
+            results
+                .iter()
+                .filter_map(|(_, r)| Some(r.as_ref().ok()?.as_path()))
+                .collect()
+        };
+        // Manual indexing only notes the folders; the user updates the index when it suits.
+        if self.defer_pasted(&moved, &copied) {
+            return;
+        }
         let mut folders = vec![dest.to_path_buf()];
         if cut {
             folders.extend(
@@ -262,6 +282,14 @@ impl App {
                 _ => None,
             };
             self.toast(how.success(single.as_deref(), moved), ToastKind::Info);
+        }
+        let removed: Vec<&std::path::Path> = results
+            .iter()
+            .filter(|(_, r)| r.is_ok())
+            .map(|(p, _)| p.as_path())
+            .collect();
+        if self.defer_removed(&removed) {
+            return;
         }
         let mut folders: Vec<std::path::PathBuf> = results
             .iter()

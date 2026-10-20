@@ -9,10 +9,12 @@
 //!   search engine consumes.
 //! - [`text`]: name folding shared by indexing and querying.
 //! - [`config`]: the JSON configuration (`config.json`).
+//! - [`dirty`]: folders the index may be out of sync with (manual indexing mode).
 //! - [`exclusion`]: exclusion rules and their compiled matcher.
 //! - [`paths`]: XDG locations of config, database and logs.
 
 pub mod config;
+pub mod dirty;
 pub mod exclusion;
 pub mod history;
 pub mod ids;

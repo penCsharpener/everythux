@@ -11,10 +11,15 @@ use crate::status::ToastKind;
 /// Something the user asked for, independent of how (menu, shortcut, button).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Command {
-    /// `Ctrl+Shift+R`: rebuild the index (asks first if a job is running).
+    /// `Ctrl+Shift+R` in automatic mode: rebuild the index (asks first if a job is running).
     FullReindex,
     /// "Restart" in the confirmation dialog.
     ConfirmFullReindex,
+    /// `Ctrl+Shift+R` in manual mode, Index → Update index: re-list the folders that are out of
+    /// sync, or quick-rescan everything when there are none.
+    UpdateIndex,
+    /// Index → Automatic indexing.
+    ToggleAutomaticIndexing,
     /// `F5`.
     QuickRescan,
     CancelJob,
@@ -106,8 +111,13 @@ impl App {
                 self.backend.cancel_job();
                 self.start_full_reindex();
             }
+            Command::UpdateIndex => self.update_index(),
+            Command::ToggleAutomaticIndexing => {
+                self.set_automatic_indexing(!self.config.indexer.automatic);
+            }
             Command::QuickRescan => {
                 self.backend.submit_job(Job::RescanAll(ScanMode::Quick));
+                self.clear_dirty();
                 self.toast("Quick rescan started", ToastKind::Info);
             }
             Command::CancelJob => self.backend.cancel_job(),
@@ -201,6 +211,7 @@ impl App {
 
     fn start_full_reindex(&mut self) {
         self.backend.submit_job(Job::FullReindex);
+        self.clear_dirty();
         self.toast("Full reindex started", ToastKind::Info);
     }
 }

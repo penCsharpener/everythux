@@ -22,6 +22,12 @@ Written in Rust, focused on ext4, backed by SQLite.
 - `F2` (or Right-click → Rename…) renames the selected file or folder right in the list; the status bar offers Undo.
 - `Delete` moves the selected items to the trash; `Shift+Delete` (or Right-click → Delete permanently…) deletes them for good after a confirmation.
 - `Ctrl+Shift+R` rebuilds the index. `F5` runs a quick rescan. You can also re-index a single volume or folder.
+- **Automatic indexing** (Index menu, `indexer.automatic`, on by default) keeps the index current with live
+  updates (inotify) and the startup and scheduled rescans. Switch it off to stop all background indexing
+  work (SSD and CPU load): the app then only notes the folders its own deletes, moves, renames and pastes
+  changed, shows "Index: manual, N folders out of sync" in the status bar, and `Ctrl+Shift+R` (Index → Update
+  index) re-lists exactly those folders. With none out of sync it quick-rescans all volumes. While automatic
+  indexing is off, `Ctrl+Shift+R` belongs to Update index and the full reindex is in the Index menu.
 - `Ctrl+Shift+Click` on a path excludes it and opens a popup to refine the rule. Exclusions support globs,
   regexes and scopes (`node_modules`, `bin` under `/home/*`, …).
 - Optional preview pane (`Ctrl+P`) for images, text, PDFs, audio and video. Text can be selected and copied

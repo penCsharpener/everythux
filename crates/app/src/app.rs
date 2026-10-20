@@ -11,6 +11,7 @@ mod context_menu;
 mod events;
 mod frame;
 mod history;
+mod indexing;
 mod interact;
 mod rename;
 mod search;
@@ -23,6 +24,7 @@ use std::sync::Arc;
 use crossbeam_channel::Receiver;
 use egui::Pos2;
 use everythux_core::config::Config;
+use everythux_core::dirty::DirtyFolders;
 use everythux_core::model::VolumeInfo;
 use everythux_core::snapshot::IndexSnapshot;
 
@@ -138,6 +140,9 @@ pub(crate) struct App {
     pub(crate) snapshot: Arc<IndexSnapshot>,
     pub(crate) index: IndexStatus,
     pub(crate) volumes: Vec<VolumeInfo>,
+    /// Folders the app's own file operations changed while automatic indexing is off; the next
+    /// manual update re-lists them. Always empty in automatic mode.
+    pub(crate) dirty: DirtyFolders,
 
     pub(crate) toasts: Vec<Toast>,
     pub(crate) windows: Windows,
@@ -186,6 +191,7 @@ impl App {
         startup_warnings: Vec<String>,
     ) -> Self {
         let history = backend.load_history();
+        let dirty = backend.load_dirty_folders();
         let bindings = Bindings::from_config(&config.keybindings);
         let banners = startup_warnings
             .into_iter()
@@ -213,6 +219,7 @@ impl App {
             snapshot: Arc::new(IndexSnapshot::empty()),
             index: IndexStatus::default(),
             volumes: Vec::new(),
+            dirty,
             toasts: Vec::new(),
             windows: Windows::default(),
             preview: PreviewState::default(),

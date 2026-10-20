@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use everythux_core::config::Config;
+use everythux_core::dirty::DirtyFolders;
 use everythux_core::history::SearchHistory;
 use everythux_index::IndexEvent;
 
@@ -233,6 +234,28 @@ impl HistorySaver {
 
     pub(super) fn save(&self, history: SearchHistory) {
         self.0.send(history);
+    }
+}
+
+/// Writes the out-of-sync folders the same way as [`ConfigSaver`] writes the config.
+#[derive(Debug)]
+pub(super) struct DirtySaver(Debounced<DirtyFolders>);
+
+impl DirtySaver {
+    pub(super) fn start(path: PathBuf, debounce: Duration) -> Self {
+        Self(Debounced::start(
+            "everythux-dirty-writer",
+            debounce,
+            move |dirty: &DirtyFolders| {
+                if let Err(e) = dirty.save(&path) {
+                    tracing::error!(error = %e, "cannot save the out-of-sync folders");
+                }
+            },
+        ))
+    }
+
+    pub(super) fn save(&self, dirty: DirtyFolders) {
+        self.0.send(dirty);
     }
 }
 

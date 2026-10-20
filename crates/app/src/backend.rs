@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use everythux_core::config::{Bookmark, Config};
+use everythux_core::dirty::DirtyFolders;
 use everythux_core::exclusion::ExclusionRule;
 use everythux_core::snapshot::IndexSnapshot;
 use everythux_index::{IndexEvent, IndexerSettings, Job};
@@ -254,4 +255,9 @@ pub(crate) trait Backend {
     fn load_history(&self) -> SearchHistory;
     /// Saves the search history in the background.
     fn save_history(&self, history: &SearchHistory);
+    /// Reads the folders left out of sync by an earlier session (blocking; called once at
+    /// startup). An unreadable file is an empty set.
+    fn load_dirty_folders(&self) -> DirtyFolders;
+    /// Saves the out-of-sync folders in the background (debounced, atomic).
+    fn save_dirty_folders(&self, dirty: &DirtyFolders);
 }

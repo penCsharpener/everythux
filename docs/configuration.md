@@ -53,7 +53,8 @@ falls back to its default, with a warning in the log.
 
 | Field | Default | Action |
 |-------|---------|--------|
-| `reindex_all` | `"Ctrl+Shift+R"` | Full reindex of all volumes |
+| `reindex_all` | `"Ctrl+Shift+R"` | Full reindex of all volumes. While `indexer.automatic` is off, a key shared with `update_index` belongs to `update_index` |
+| `update_index` | `"Ctrl+Shift+R"` | Update the index on request: re-list the folders that Everythux's own file operations changed (see `indexer.automatic`), or quick-rescan all volumes when there are none. Index → Update index. Shares the default key with `reindex_all`; the indexing mode decides which of the two uses it, so give one of them another key to have both |
 | `quick_rescan` | `"F5"` | Quick rescan |
 | `exclude_path_click` | `"Ctrl+Shift+LeftClick"` | Click on a Path cell that adds the path to the exclusions |
 | `toggle_preview` | `"Ctrl+P"` | Show or hide the preview pane |
@@ -70,6 +71,7 @@ falls back to its default, with a warning in the log.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
+| `automatic` | `true` | Automatic indexing (also Index → Automatic indexing, which takes effect immediately). `false` switches off all background indexing: no inotify live updates, no scheduled rescans and no startup rescan, whatever `rescan_on_startup`, `scheduled_rescan_minutes` and `live_updates` say (their values are kept). Only an empty database is still built once. The index then changes only when you ask (`Ctrl+Shift+R`, `F5`, the Index menu). Deletes, moves, renames and pastes done in Everythux are remembered as folders out of sync in `dirty-folders.list` next to the config file; the status bar counts them and `Ctrl+Shift+R` re-lists them. Switching back to `true` runs one catch-up quick rescan |
 | `threads` | `0` | Walker threads. `0` means one per CPU |
 | `follow_symlinks` | `false` | Follow symbolic links while scanning. Loops are detected either way |
 | `one_filesystem` | `true` | Never descend into another filesystem. Nested mounts are separate volumes |

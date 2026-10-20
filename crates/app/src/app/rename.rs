@@ -147,10 +147,13 @@ impl App {
         match result {
             Ok(to) => {
                 // Update the index right away; the watcher's later event finds nothing to do.
-                self.backend.submit_job(Job::Renamed {
-                    from: from.to_path_buf(),
-                    to: to.clone(),
-                });
+                // With automatic indexing off, the folder is only noted as out of sync.
+                if !self.defer_renamed(from, &to) {
+                    self.backend.submit_job(Job::Renamed {
+                        from: from.to_path_buf(),
+                        to: to.clone(),
+                    });
+                }
                 self.pending_reselect = Some(PendingReselect {
                     path: to.clone(),
                     until: self.now + RESELECT_SECONDS,

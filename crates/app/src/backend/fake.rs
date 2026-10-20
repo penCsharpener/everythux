@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use everythux_core::config::Config;
+use everythux_core::dirty::DirtyFolders;
 use everythux_core::history::SearchHistory;
 use everythux_core::ids::EntryId;
 use everythux_core::snapshot::IndexSnapshot;
@@ -40,6 +41,7 @@ pub(crate) enum Call {
     Compute(&'static str),
     SaveConfig(Box<Config>),
     SaveHistory(Box<SearchHistory>),
+    SaveDirty(Box<DirtyFolders>),
 }
 
 #[derive(Debug, Default)]
@@ -147,6 +149,14 @@ impl FakeHandle {
     pub(crate) fn last_saved_history(&self) -> Option<SearchHistory> {
         self.calls().into_iter().rev().find_map(|c| match c {
             Call::SaveHistory(h) => Some(*h),
+            _ => None,
+        })
+    }
+
+    /// The most recent set passed to `save_dirty_folders`.
+    pub(crate) fn last_saved_dirty(&self) -> Option<DirtyFolders> {
+        self.calls().into_iter().rev().find_map(|c| match c {
+            Call::SaveDirty(d) => Some(*d),
             _ => None,
         })
     }
@@ -318,6 +328,14 @@ impl Backend for FakeBackend {
 
     fn save_history(&self, history: &SearchHistory) {
         self.record(Call::SaveHistory(Box::new(history.clone())));
+    }
+
+    fn load_dirty_folders(&self) -> DirtyFolders {
+        DirtyFolders::default()
+    }
+
+    fn save_dirty_folders(&self, dirty: &DirtyFolders) {
+        self.record(Call::SaveDirty(Box::new(dirty.clone())));
     }
 
     fn config_path(&self) -> PathBuf {

@@ -137,6 +137,7 @@ pub(crate) fn describe_shortcut(shortcut: KeyboardShortcut) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Bindings {
     pub(crate) reindex_all: KeyboardShortcut,
+    pub(crate) update_index: KeyboardShortcut,
     pub(crate) quick_rescan: KeyboardShortcut,
     pub(crate) toggle_preview: KeyboardShortcut,
     pub(crate) focus_search: KeyboardShortcut,
@@ -153,6 +154,20 @@ pub(crate) struct Bindings {
 }
 
 impl Bindings {
+    /// The shortcuts to show for "Reindex all" and "Update index". Both default to the same
+    /// key; a key shared by the two belongs to "Update index" while automatic indexing is off
+    /// (its whole point) and to "Reindex all" while it is on, so the other one shows none.
+    pub(crate) fn index_shortcuts(
+        &self,
+        automatic: bool,
+    ) -> (Option<KeyboardShortcut>, Option<KeyboardShortcut>) {
+        match (self.reindex_all == self.update_index, automatic) {
+            (false, _) => (Some(self.reindex_all), Some(self.update_index)),
+            (true, true) => (Some(self.reindex_all), None),
+            (true, false) => (None, Some(self.update_index)),
+        }
+    }
+
     /// Parses the configured bindings; invalid ones fall back to the defaults with a warning.
     pub(crate) fn from_config(config: &Keybindings) -> Self {
         let defaults = Keybindings::default();
@@ -166,6 +181,7 @@ impl Bindings {
             })
         };
         let reindex_all = key("reindex_all", &config.reindex_all, &defaults.reindex_all);
+        let update_index = key("update_index", &config.update_index, &defaults.update_index);
         let quick_rescan = key("quick_rescan", &config.quick_rescan, &defaults.quick_rescan);
         let toggle_preview = key("toggle_preview", &config.toggle_preview, &defaults.toggle_preview);
         let focus_search = key("focus_search", &config.focus_search, &defaults.focus_search);
@@ -196,6 +212,7 @@ impl Bindings {
         });
         Self {
             reindex_all,
+            update_index,
             quick_rescan,
             toggle_preview,
             focus_search,
@@ -290,6 +307,33 @@ mod tests {
             bindings.exclude_click.modifiers,
             Modifiers::CTRL | Modifiers::SHIFT
         );
+    }
+
+    #[test]
+    fn ctrl_shift_r_belongs_to_the_command_that_fits_the_indexing_mode() {
+        let bindings = Bindings::from_config(&Keybindings::default());
+        let ctrl_shift_r = KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
+        assert_eq!(bindings.update_index, ctrl_shift_r);
+        assert_eq!(bindings.index_shortcuts(true), (Some(ctrl_shift_r), None));
+        assert_eq!(bindings.index_shortcuts(false), (None, Some(ctrl_shift_r)));
+
+        let apart = Bindings::from_config(&Keybindings {
+            update_index: "Ctrl+Alt+U".to_owned(),
+            ..Keybindings::default()
+        });
+        let (reindex, update) = apart.index_shortcuts(true);
+        assert!(
+            reindex.is_some() && update.is_some(),
+            "different keys never shadow each other"
+        );
+    }
+
+    #[test]
+    fn update_index_defaults_when_missing_from_an_old_config() {
+        let json = r#"{"keybindings": {"quick_rescan": "F6"}}"#;
+        let config = everythux_core::config::Config::from_json(json, std::path::Path::new("c.json"))
+            .expect("an old config loads");
+        assert_eq!(config.keybindings.update_index, "Ctrl+Shift+R");
     }
 
     #[test]

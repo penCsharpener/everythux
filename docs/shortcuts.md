@@ -16,7 +16,7 @@ All keyboard shortcuts and the exclusion click can be changed in `config.json` u
 | `Ctrl+Shift+W` | extra search bar | Close the focused search bar and focus the one above. Does nothing in the first bar |
 | `Tab` / `Shift+Tab` | global | From the result list (or with nothing focused): focus the newest, bottom-most search bar. From any search bar: focus the result list, keeping the selection (or selecting the first row). `Tab` never walks through the table cells |
 | `Esc` | search bar | Clear the focused search bar (the first bar when no bar has the focus) |
-| `Ctrl+Shift+R` | global | Full reindex of all volumes (background, cancellable). Works while the search box has focus |
+| `Ctrl+Shift+R` | global | Full reindex of all volumes (background, cancellable). Works while the search box has focus. With automatic indexing off (Index → Automatic indexing) it **updates the index** instead: it re-lists the folders that file operations in Everythux (delete, move, rename, paste) left out of sync, or quick-rescans all volumes when there are none. The full reindex stays in the Index menu |
 | `F5` | global | Quick rescan |
 | `Ctrl+U` | global | Match against the full path instead of the name |
 | `Ctrl+P` | global | Show or hide the preview pane |

@@ -173,6 +173,8 @@ impl Indexer {
     /// plus the event stream. Immediately emits `SnapshotReady` with the stored index (possibly
     /// empty) and `VolumesChanged`, then runs `settings.indexer.rescan_on_startup` (an empty
     /// database always gets a full scan). Starts the inotify watcher if `live_updates` is on.
+    /// With `settings.indexer.automatic` off, the startup rescan, the watcher and the scheduled
+    /// rescans are all skipped: only the stored index is loaded (and an empty database built once).
     ///
     /// Every job emits `Started`, throttled `Progress`, and one of `Finished` / `Cancelled` /
     /// `Failed`; a job that changed data publishes `SnapshotReady` *before* its `Finished`.
@@ -192,7 +194,7 @@ impl Indexer {
         let startup = if store.is_empty()? {
             Some(Job::FullReindex)
         } else {
-            match settings.indexer.rescan_on_startup {
+            match settings.indexer.effective_startup_rescan() {
                 StartupRescan::None => None,
                 StartupRescan::Quick => Some(Job::RescanAll(ScanMode::Quick)),
                 StartupRescan::Full => Some(Job::RescanAll(ScanMode::Full)),

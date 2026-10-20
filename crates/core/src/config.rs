@@ -340,8 +340,14 @@ impl Default for UiConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Keybindings {
-    /// Full reindex of all volumes.
+    /// Full reindex of all volumes. With automatic indexing off, a binding shared with
+    /// `update_index` belongs to `update_index`.
     pub reindex_all: String,
+    /// Update the index on request: re-list the folders the app's file operations changed (see
+    /// `indexer.automatic`), or quick-rescan all volumes when there are none. Shares its default
+    /// with `reindex_all`: `Ctrl+Shift+R` runs this while automatic indexing is off and the
+    /// full reindex while it is on.
+    pub update_index: String,
     /// Quick rescan of all volumes.
     pub quick_rescan: String,
     /// Click modifier that adds a path to the exclusions.
@@ -371,6 +377,7 @@ impl Default for Keybindings {
     fn default() -> Self {
         Self {
             reindex_all: "Ctrl+Shift+R".to_owned(),
+            update_index: "Ctrl+Shift+R".to_owned(),
             quick_rescan: "F5".to_owned(),
             exclude_path_click: "Ctrl+Shift+LeftClick".to_owned(),
             toggle_preview: "Ctrl+P".to_owned(),
@@ -402,7 +409,17 @@ pub enum StartupRescan {
 /// Indexer behaviour.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent user toggles, stored flat in JSON"
+)]
 pub struct IndexerConfig {
+    /// Automatic indexing. When off, the indexer does no background work of its own: no startup
+    /// rescan (an empty database is still built once), no scheduled rescans and no inotify live
+    /// updates, whatever `rescan_on_startup`, `scheduled_rescan_minutes` and `live_updates` say.
+    /// The index is then refreshed on request only (`Ctrl+Shift+R`, F5 or the Index menu). The
+    /// other fields keep their values, so switching back restores the previous behaviour.
+    pub automatic: bool,
     /// Walker threads; `0` = number of CPUs.
     pub threads: usize,
     /// Follow symlinks (off by default; loops are detected either way).
@@ -422,6 +439,7 @@ pub struct IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
+            automatic: true,
             threads: 0,
             follow_symlinks: false,
             one_filesystem: true,
@@ -430,6 +448,34 @@ impl Default for IndexerConfig {
             live_updates: true,
             watch_roots: Vec::new(),
         }
+    }
+}
+
+impl IndexerConfig {
+    /// The startup rescan that actually runs: [`StartupRescan::None`] when `automatic` is off.
+    #[must_use]
+    pub const fn effective_startup_rescan(&self) -> StartupRescan {
+        if self.automatic {
+            self.rescan_on_startup
+        } else {
+            StartupRescan::None
+        }
+    }
+
+    /// The periodic rescan interval that actually runs; `0` (off) when `automatic` is off.
+    #[must_use]
+    pub const fn effective_scheduled_rescan_minutes(&self) -> u32 {
+        if self.automatic {
+            self.scheduled_rescan_minutes
+        } else {
+            0
+        }
+    }
+
+    /// Whether the inotify watcher should run: `automatic` and `live_updates` are both on.
+    #[must_use]
+    pub const fn effective_live_updates(&self) -> bool {
+        self.automatic && self.live_updates
     }
 }
 
@@ -585,6 +631,37 @@ mod tests {
         let config = Config::from_json(r#"{ "ui": { "columns": [] } }"#, Path::new("c.json"))
             .expect("old config loads");
         assert!(!config.ui.lock_column_widths);
+    }
+
+    #[test]
+    fn automatic_indexing_is_on_when_missing_from_an_old_config() {
+        let old = r#"{ "version": 2, "indexer": { "live_updates": true, "scheduled_rescan_minutes": 30 } }"#;
+        let config = Config::from_json(old, Path::new("c.json")).expect("old config loads");
+        assert!(
+            config.indexer.automatic,
+            "existing configs keep indexing automatically"
+        );
+        assert!(config.indexer.effective_live_updates());
+        assert_eq!(config.indexer.effective_scheduled_rescan_minutes(), 30);
+        assert_eq!(config.indexer.effective_startup_rescan(), StartupRescan::Quick);
+        assert!(Config::default().indexer.automatic);
+        assert_eq!(config.version, CURRENT_VERSION, "no migration needed");
+    }
+
+    #[test]
+    fn manual_mode_switches_off_every_background_trigger_but_keeps_the_values() {
+        let json = r#"{ "indexer": { "automatic": false, "live_updates": true,
+            "scheduled_rescan_minutes": 30, "rescan_on_startup": "full" } }"#;
+        let config = Config::from_json(json, Path::new("c.json")).expect("loads");
+        let indexer = &config.indexer;
+        assert!(!indexer.automatic);
+        assert!(!indexer.effective_live_updates());
+        assert_eq!(indexer.effective_scheduled_rescan_minutes(), 0);
+        assert_eq!(indexer.effective_startup_rescan(), StartupRescan::None);
+        assert!(indexer.live_updates && indexer.scheduled_rescan_minutes == 30);
+        assert_eq!(indexer.rescan_on_startup, StartupRescan::Full);
+        let again = Config::from_json(&config.to_json(), Path::new("c.json")).expect("round trip");
+        assert_eq!(again, config);
     }
 
     #[test]

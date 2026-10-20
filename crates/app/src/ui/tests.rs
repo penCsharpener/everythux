@@ -2552,3 +2552,116 @@ fn toolbar_star_bookmarks_the_current_search() {
     assert_eq!(r.harness.state().config.bookmarks.len(), 1);
     assert_eq!(r.harness.state().config.bookmarks[0].name, "report");
 }
+
+mod manual_indexing {
+    use super::*;
+
+    const NOTES: &str = "/home/me/docs/notes.txt";
+
+    /// A rig whose config has automatic indexing off.
+    fn manual_rig() -> Rig {
+        let mut r = rig();
+        r.harness.state_mut().config.indexer.automatic = false;
+        r.show_default();
+        r.fake.clear();
+        r
+    }
+
+    fn trash_notes(r: &mut Rig) {
+        r.fake.send(BackendEvent::Trashed(vec![(NOTES.into(), Ok(()))]));
+        r.harness.run_steps(2);
+    }
+
+    #[test]
+    fn ctrl_shift_r_updates_the_folders_file_operations_left_out_of_sync() {
+        let mut r = manual_rig();
+        trash_notes(&mut r);
+        assert!(r.fake.jobs().is_empty(), "the trash did not touch the index");
+        r.harness
+            .key_press_modifiers(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
+        r.harness.run_steps(3);
+        assert_eq!(r.fake.jobs(), [Job::RefreshDirs(vec!["/home/me/docs".into()])]);
+        assert!(r.harness.state().dirty.is_empty());
+    }
+
+    #[test]
+    fn ctrl_shift_r_with_nothing_out_of_sync_quick_rescans_even_while_typing() {
+        let mut r = manual_rig();
+        r.harness.get_by_role(egui::accesskit::Role::TextInput).focus();
+        r.harness.run_steps(2);
+        r.harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .type_text("abc");
+        r.harness.run_steps(2);
+        r.harness
+            .key_press_modifiers(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
+        r.harness.run_steps(3);
+        assert_eq!(r.fake.jobs(), [Job::RescanAll(everythux_index::ScanMode::Quick)]);
+        assert_eq!(r.harness.state().search.first().text, "abc");
+    }
+
+    #[test]
+    fn the_status_bar_reports_the_folders_out_of_sync_and_nothing_otherwise() {
+        let mut r = manual_rig();
+        assert!(
+            r.harness.query_by_label_contains("out of sync").is_none(),
+            "quiet when the index is current"
+        );
+        trash_notes(&mut r);
+        r.harness.run_steps(2);
+        r.harness
+            .get_by_label("Index: manual, 1 folder out of sync (Ctrl+Shift+R to update)");
+        r.harness
+            .key_press_modifiers(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
+        r.harness.run_steps(3);
+        assert!(r.harness.query_by_label_contains("out of sync").is_none());
+    }
+
+    #[test]
+    fn automatic_mode_shows_no_note_and_keeps_ctrl_shift_r_as_the_full_reindex() {
+        let mut r = rig();
+        r.show_default();
+        r.fake.clear();
+        r.fake.send(BackendEvent::Trashed(vec![(NOTES.into(), Ok(()))]));
+        r.harness.run_steps(2);
+        assert!(r.harness.query_by_label_contains("out of sync").is_none());
+        r.harness
+            .key_press_modifiers(Modifiers::CTRL | Modifiers::SHIFT, Key::R);
+        r.harness.run_steps(3);
+        assert!(r.fake.jobs().contains(&Job::FullReindex));
+        assert!(!r.fake.jobs().iter().any(|j| matches!(j, Job::RefreshDirs(_))));
+    }
+
+    #[test]
+    fn the_index_menu_updates_the_index_and_shows_the_shortcut() {
+        let mut r = manual_rig();
+        trash_notes(&mut r);
+        r.harness.get_by_label("Index").click();
+        r.harness.run_steps(3);
+        // The key is Update index's in manual mode, so Reindex all shows none.
+        r.harness.get_by_label("Update index Ctrl+Shift+R");
+        assert!(
+            r.harness
+                .query_by_label_contains("Reindex all Ctrl+Shift+R")
+                .is_none(),
+            "only one entry claims the shared key"
+        );
+        r.harness.get_by_label("Update index Ctrl+Shift+R").click();
+        r.harness.run_steps(3);
+        assert_eq!(r.fake.jobs(), [Job::RefreshDirs(vec!["/home/me/docs".into()])]);
+    }
+
+    #[test]
+    fn the_automatic_indexing_menu_item_switches_modes_without_a_restart() {
+        let mut r = rig();
+        r.show_default();
+        r.fake.clear();
+        r.harness.get_by_label("Index").click();
+        r.harness.run_steps(3);
+        r.harness.get_by_label("Automatic indexing").click();
+        r.harness.run_steps(3);
+        assert!(!r.harness.state().config.indexer.automatic);
+        assert!(!r.fake.last_settings().expect("pushed").indexer.automatic);
+        assert!(!r.fake.last_saved_config().expect("saved").indexer.automatic);
+    }
+}

@@ -146,3 +146,47 @@ fn the_apps_own_config_and_log_folders_are_not_watched() {
         "log folder was watched"
     );
 }
+
+#[test]
+fn manual_mode_starts_no_watcher_and_switching_it_on_or_off_takes_effect_at_runtime() {
+    let (db, tree) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let tb = TreeBuilder::new(tree.path());
+    tb.file("dir/one.txt", 1).unwrap();
+    let root = tree.path().to_path_buf();
+    let mut manual = watching_settings(tree.path());
+    manual.indexer.automatic = false;
+    let (indexer, rx) = start_scanned(db.path(), manual.clone());
+
+    // Off: a change is not noticed (no watcher, so no refresh job and no new snapshot).
+    tb.file("dir/ignored.txt", 1).unwrap();
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(!listing(&indexer.snapshot(), &root).contains_key("dir/ignored.txt"));
+
+    // On, without a restart: the watcher starts. `ApplyExclusions` is a no-op job that tells
+    // us the settings were applied (the worker takes settings before queued jobs).
+    indexer.update_settings(watching_settings(tree.path()));
+    crate::common::run_ok(&indexer, &rx, everythux_index::Job::ApplyExclusions);
+    // The watcher adds its watches on its own thread, so a file created too early is missed:
+    // keep creating files until one is noticed.
+    let deadline = Instant::now() + TIMEOUT;
+    let mut n = 0;
+    while !listing(&indexer.snapshot(), &root)
+        .keys()
+        .any(|k| k.starts_with("dir/seen"))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "no live update after switching automatic on"
+        );
+        n += 1;
+        tb.file(format!("dir/seen{n}.txt"), 1).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    // Off again: the watcher stops.
+    indexer.update_settings(manual);
+    crate::common::run_ok(&indexer, &rx, everythux_index::Job::ApplyExclusions);
+    tb.file("dir/after.txt", 1).unwrap();
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(!listing(&indexer.snapshot(), &root).contains_key("dir/after.txt"));
+}

@@ -19,6 +19,8 @@ impl App {
     pub(crate) fn toolbar(&mut self, ui: &mut Ui) {
         let s = &self.config.search;
         let b = &self.bindings;
+        let (reindex_shortcut, _) = b.index_shortcuts(self.automatic_indexing());
+        let reindex_shortcut = reindex_shortcut.map(describe_shortcut).unwrap_or_default();
         let buttons = [
             (
                 Glyph::MatchCase,
@@ -46,7 +48,7 @@ impl App {
             ),
             (
                 Glyph::Reindex,
-                tip("Reindex all", &describe_shortcut(b.reindex_all)),
+                tip("Reindex all", &reindex_shortcut),
                 None,
                 Command::FullReindex,
             ),

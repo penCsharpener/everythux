@@ -14,7 +14,9 @@ without a scope also hides `/usr/bin`. See [exclusions.md](exclusions.md).
 mounted **ext4** filesystems are indexed. Add other mount points under `volumes.include`, or check
 that the volume's UUID is not in `volumes.disabled_uuids`. `everythux-cli scan --dry-run` shows what would be indexed.
 
-**The index is stale.** Run `everythux-cli reindex --quick` (or press `F5`). A quick rescan only
+**The index is stale.** If `indexer.automatic` is off (Index → Automatic indexing), nothing updates the index by
+itself: press `Ctrl+Shift+R` (re-lists the folders changed from inside Everythux, or quick-rescans everything
+when there are none) or `F5`. Otherwise run `everythux-cli reindex --quick` (or press `F5`). A quick rescan only
 re-lists folders whose modification time changed, so it can miss files whose size or time changed inside an
 otherwise unchanged folder. Use `reindex --full` (or `Ctrl+Shift+R`) for a complete rescan, or
 `reindex --path <folder>` for one folder.

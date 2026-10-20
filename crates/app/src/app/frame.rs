@@ -67,6 +67,29 @@ fn bar_shortcuts(
     switched_focus
 }
 
+/// The global shortcuts in the order they are tested. Most specific first: egui ignores extra
+/// Shift, so Ctrl+Shift+R must be tested before a plain Ctrl+R binding could match it. The two
+/// index commands share Ctrl+Shift+R by default and the first of them wins: "Update index" in
+/// manual mode, "Reindex all" otherwise. The first entry is the only one that stays active while
+/// the rename editor is open.
+fn global_shortcuts(b: &Bindings, automatic: bool) -> [(&KeyboardShortcut, Command); 6] {
+    let reindex = (&b.reindex_all, Command::FullReindex);
+    let update = (&b.update_index, Command::UpdateIndex);
+    let (first, second) = if automatic {
+        (reindex, update)
+    } else {
+        (update, reindex)
+    };
+    [
+        first,
+        second,
+        (&b.quick_rescan, Command::QuickRescan),
+        (&b.toggle_preview, Command::TogglePreview),
+        (&b.focus_search, Command::FocusSearch),
+        (&b.toggle_match_path, Command::ToggleMatchPath),
+    ]
+}
+
 impl App {
     /// Renders the whole application into `ui` (the root ui of the viewport).
     pub(crate) fn show(&mut self, ui: &mut egui::Ui) {
@@ -121,19 +144,12 @@ impl App {
         let bar_keys = !editing && !popup_open && (!text_focused || focused_bar.is_some());
         let mut switched_focus = false;
         let b = &self.bindings;
+        let automatic = self.automatic_indexing();
 
         let commands = ctx.input_mut(|i| {
             let mut commands = Vec::new();
-            // Most specific shortcuts first: egui ignores extra Shift, so Ctrl+Shift+R must be
-            // tested before a plain Ctrl+R binding could match it.
-            let globals = [
-                (&b.reindex_all, Command::FullReindex),
-                (&b.quick_rescan, Command::QuickRescan),
-                (&b.toggle_preview, Command::TogglePreview),
-                (&b.focus_search, Command::FocusSearch),
-                (&b.toggle_match_path, Command::ToggleMatchPath),
-            ];
-            // `reindex_all` is first: it is the only one that stays active while editing.
+            let globals = global_shortcuts(b, automatic);
+            // Only the first stays active while editing.
             let active = if editing { 1 } else { globals.len() };
             for (shortcut, command) in globals.into_iter().take(active) {
                 if i.consume_shortcut(shortcut) {
