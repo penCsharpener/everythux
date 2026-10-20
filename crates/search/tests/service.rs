@@ -145,6 +145,28 @@ fn the_newest_snapshot_wins() {
 }
 
 #[test]
+fn a_burst_of_snapshots_does_not_keep_the_superseded_ones() {
+    let (service, rx) = SearchService::start(snapshot(&[]));
+    service.submit(request("alpha"));
+    recv(&rx);
+    let burst: Vec<_> = (0..20).map(|i| snapshot(&[&format!("alpha{i}.txt")])).collect();
+    let weak: Vec<_> = burst.iter().map(Arc::downgrade).collect();
+    for s in burst {
+        service.set_snapshot(s);
+    }
+    let last = weak.last().expect("burst is not empty").clone();
+    loop {
+        let r = recv(&rx);
+        if std::ptr::eq(Arc::as_ptr(&r.snapshot), last.as_ptr()) {
+            break;
+        }
+    }
+    // Only the snapshot being shown (and at most one other in flight) may stay alive.
+    let alive = weak.iter().filter(|w| w.strong_count() > 0).count();
+    assert!(alive <= 2, "{alive} snapshots are still held");
+}
+
+#[test]
 fn requests_submitted_while_the_first_index_builds_are_answered() {
     let (service, rx) = SearchService::start(Arc::new(generate(200_000, 5)));
     let generation = service.submit(request("report"));

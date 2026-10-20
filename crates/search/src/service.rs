@@ -78,6 +78,14 @@ struct Shared {
     /// Bumped by every `set_snapshot`, so a slow older build can't replace a newer index.
     epoch: AtomicU64,
     closed: AtomicBool,
+    /// The snapshot waiting to be indexed and whether a builder thread is running.
+    build: Mutex<BuildState>,
+}
+
+#[derive(Debug, Default)]
+struct BuildState {
+    pending: Option<(u64, Arc<IndexSnapshot>)>,
+    running: bool,
 }
 
 /// What one pass of the worker has to do after draining its queue.
@@ -154,32 +162,63 @@ impl SearchService {
     /// request is re-run against the new snapshot when ready).
     pub fn set_snapshot(&self, snapshot: Arc<IndexSnapshot>) {
         let epoch = self.shared.epoch.fetch_add(1, Ordering::SeqCst) + 1;
+        {
+            let mut build = self.shared.build.lock().unwrap_or_else(PoisonError::into_inner);
+            // A snapshot still waiting for its turn is superseded: drop it instead of indexing it.
+            build.pending = Some((epoch, snapshot));
+            if build.running {
+                return;
+            }
+            build.running = true;
+        }
         let tx = self.tx.clone();
         let shared = Arc::clone(&self.shared);
         let spawned = thread::Builder::new()
             .name("everythux-index-build".to_owned())
-            .spawn(move || {
-                if shared.closed.load(Ordering::Acquire) {
-                    return;
-                }
-                let started = Instant::now();
-                let index = Arc::new(SearchIndex::build(snapshot));
-                tracing::debug!(
-                    epoch,
-                    elapsed_ms = started.elapsed().as_millis(),
-                    "search index built"
-                );
-                // The worker may be gone already; then the index is simply dropped.
-                let _ = tx.send(Msg::Index { epoch, index });
-            });
+            .spawn(move || build_pending(&shared, &tx));
         match spawned {
             Ok(handle) => {
                 let mut builders = self.builders.lock().unwrap_or_else(PoisonError::into_inner);
                 builders.retain(|h| !h.is_finished());
                 builders.push(handle);
             }
-            Err(error) => tracing::error!(%error, "cannot spawn the index build thread"),
+            Err(error) => {
+                self.shared
+                    .build
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .running = false;
+                tracing::error!(%error, "cannot spawn the index build thread");
+            }
         }
+    }
+}
+
+/// Indexes the newest pending snapshot, then the next one that arrived meanwhile, until none is
+/// left. Only one build runs at a time, so a burst of snapshots never holds several of them (and
+/// their sort permutations) in memory together.
+fn build_pending(shared: &Shared, tx: &Sender<Msg>) {
+    loop {
+        let next = {
+            let mut build = shared.build.lock().unwrap_or_else(PoisonError::into_inner);
+            let next = build.pending.take();
+            if next.is_none() || shared.closed.load(Ordering::Acquire) {
+                build.pending = None;
+                build.running = false;
+                return;
+            }
+            next
+        };
+        let Some((epoch, snapshot)) = next else { return };
+        let started = Instant::now();
+        let index = Arc::new(SearchIndex::build(snapshot));
+        tracing::debug!(
+            epoch,
+            elapsed_ms = started.elapsed().as_millis(),
+            "search index built"
+        );
+        // The worker may be gone already; then the index is simply dropped.
+        let _ = tx.send(Msg::Index { epoch, index });
     }
 }
 

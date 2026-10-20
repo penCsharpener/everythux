@@ -60,6 +60,7 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
   Right-click → Delete permanently… delete it for good after a confirmation.
 - 0.16.1: A search is also remembered in the history when its search field loses the focus.
 - 0.16.2: The context menu's Properties… shows the properties of the clicked item, not of its folder;
+- 0.16.3: Fixes a memory leak: a burst of live index updates started one uncancelled search-index build per snapshot, all alive at once; now one build runs at a time and superseded snapshots are dropped unbuilt.
   `ui.properties_target` only steers the Size/Modified double-click.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
