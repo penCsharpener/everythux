@@ -1,14 +1,16 @@
 //! Worker-thread plumbing: generic task workers, event forwarders and the debounced config writer.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use everythux_core::config::Config;
 use everythux_core::history::SearchHistory;
+use everythux_index::IndexEvent;
 
-use super::{BackendEvent, Compute};
+use super::{BackendEvent, Compute, SnapshotSlot};
 
 /// How long the config writer waits for further changes before touching the disk.
 pub(super) const CONFIG_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -96,6 +98,40 @@ where
         });
     if let Err(e) = spawned {
         tracing::error!(error = %e, "cannot spawn forwarder thread");
+    }
+}
+
+/// Forwards the indexer's events into the UI event channel like [`forward`], except that snapshots
+/// go through a [`SnapshotSlot`]: however long the UI does not drain the channel (a minimized
+/// window), at most one snapshot waits for it.
+pub(super) fn forward_index(rx: Receiver<IndexEvent>, events: Sender<BackendEvent>, ctx: egui::Context) {
+    let spawned = std::thread::Builder::new()
+        .name("everythux-forward-index".to_owned())
+        .spawn(move || relay_index(&rx, &events, &ctx));
+    if let Err(e) = spawned {
+        tracing::error!(error = %e, "cannot spawn the index event forwarder");
+    }
+}
+
+/// Body of [`forward_index`]; returns when either channel closes.
+fn relay_index(rx: &Receiver<IndexEvent>, events: &Sender<BackendEvent>, ctx: &egui::Context) {
+    let slot = Arc::new(SnapshotSlot::default());
+    for event in rx {
+        let event = match event {
+            IndexEvent::SnapshotReady(snapshot) => {
+                if !slot.put(snapshot) {
+                    // The UI has not taken the previous snapshot yet; the event that tells it to
+                    // is still queued and will now find this newer one.
+                    continue;
+                }
+                BackendEvent::Snapshot(Arc::clone(&slot))
+            }
+            other => BackendEvent::Index(other),
+        };
+        if events.send(event).is_err() {
+            return;
+        }
+        ctx.request_repaint();
     }
 }
 
@@ -202,12 +238,68 @@ impl HistorySaver {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use everythux_core::exclusion::{ExclusionRule, RuleKind};
     use everythux_core::snapshot::IndexSnapshot;
+    use everythux_index::{JobId, JobStats};
 
     use super::*;
+
+    /// Regression test: a minimized window drains nothing while live updates keep publishing
+    /// snapshots. Every queued snapshot used to stay alive (tens of GB after an idle hour).
+    #[test]
+    fn undrained_snapshots_do_not_pile_up() {
+        let (index_tx, index_rx) = crossbeam_channel::unbounded();
+        let (events, ui) = crossbeam_channel::unbounded();
+        let mut published = Vec::new();
+        for job in 1..=50 {
+            let snapshot = Arc::new(IndexSnapshot::empty());
+            published.push(Arc::downgrade(&snapshot));
+            index_tx.send(IndexEvent::SnapshotReady(snapshot)).expect("open");
+            index_tx
+                .send(IndexEvent::Finished {
+                    job: JobId(job),
+                    stats: JobStats::default(),
+                })
+                .expect("open");
+        }
+        drop(index_tx);
+        relay_index(&index_rx, &events, &egui::Context::default());
+
+        let alive = published.iter().filter(|s| s.strong_count() > 0).count();
+        assert_eq!(alive, 1, "only the newest snapshot is kept for the UI");
+
+        let queued: Vec<BackendEvent> = ui.try_iter().collect();
+        let finished = queued
+            .iter()
+            .filter(|e| matches!(e, BackendEvent::Index(IndexEvent::Finished { .. })))
+            .count();
+        assert_eq!(finished, 50, "other index events are all delivered");
+        let wake_ups: Vec<&Arc<SnapshotSlot>> = queued
+            .iter()
+            .filter_map(|e| match e {
+                BackendEvent::Snapshot(slot) => Some(slot),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(wake_ups.len(), 1, "one wake-up for the UI");
+        let newest = wake_ups[0].take().expect("the newest snapshot waits in the slot");
+        let last = published.last().expect("published");
+        assert!(std::ptr::eq(Arc::as_ptr(&newest), last.as_ptr()));
+    }
+
+    #[test]
+    fn snapshot_slot_wakes_the_ui_only_when_it_was_empty() {
+        let slot = SnapshotSlot::default();
+        let first = Arc::new(IndexSnapshot::empty());
+        let second = Arc::new(IndexSnapshot::empty());
+        assert!(slot.put(Arc::clone(&first)), "empty slot: queue a wake-up");
+        assert!(!slot.put(Arc::clone(&second)), "the wake-up is still queued");
+        assert_eq!(Arc::strong_count(&first), 1, "the replaced snapshot is dropped");
+        let taken = slot.take().expect("waiting");
+        assert!(Arc::ptr_eq(&taken, &second));
+        assert!(slot.take().is_none());
+        assert!(slot.put(first), "taken: the next snapshot needs a new wake-up");
+    }
 
     fn preview(request: u64) -> Compute {
         Compute::ExclusionPreview {

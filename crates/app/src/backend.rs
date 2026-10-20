@@ -131,10 +131,42 @@ pub(crate) struct ExclusionPreview {
     pub(crate) error: Option<String>,
 }
 
+/// The newest index snapshot the UI has not picked up yet.
+///
+/// The UI drains its event channel only while it draws, and eframe draws nothing while the window
+/// is minimized or hidden (on Wayland it does not even run `App::logic` then). Live updates keep
+/// publishing snapshots meanwhile, each a full copy of the index, so queuing them on the channel
+/// let memory grow without limit. The index event forwarder parks them here instead: a newer
+/// snapshot replaces one that was not taken yet, and only the one that fills an empty slot queues
+/// a [`BackendEvent::Snapshot`] to wake the UI.
+#[derive(Debug, Default)]
+pub(crate) struct SnapshotSlot(std::sync::Mutex<Option<Arc<IndexSnapshot>>>);
+
+impl SnapshotSlot {
+    /// Stores `snapshot`, dropping one that was not taken yet. Returns whether the slot was
+    /// empty, i.e. whether the UI needs a new [`BackendEvent::Snapshot`] to come and take it.
+    pub(crate) fn put(&self, snapshot: Arc<IndexSnapshot>) -> bool {
+        self.lock().replace(snapshot).is_none()
+    }
+
+    /// Takes the waiting snapshot, if any.
+    pub(crate) fn take(&self) -> Option<Arc<IndexSnapshot>> {
+        self.lock().take()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Arc<IndexSnapshot>>> {
+        // The guarded value is a plain `Option`, always consistent even after a panic.
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 /// Everything a worker can report back.
 #[derive(Debug)]
 pub(crate) enum BackendEvent {
+    /// Indexer events, except snapshots (see [`BackendEvent::Snapshot`]).
     Index(IndexEvent),
+    /// A new index snapshot is waiting in the slot ([`SnapshotSlot::take`]).
+    Snapshot(Arc<SnapshotSlot>),
     Search(SearchResults),
     Preview(PreviewResult),
     Platform {

@@ -71,6 +71,11 @@ impl App {
     pub(crate) fn handle_event(&mut self, event: BackendEvent) {
         match event {
             BackendEvent::Index(ev) => self.on_index_event(ev),
+            BackendEvent::Snapshot(slot) => {
+                if let Some(snapshot) = slot.take() {
+                    self.on_index_event(IndexEvent::SnapshotReady(snapshot));
+                }
+            }
             BackendEvent::Search(res) => self.on_search_results(res),
             BackendEvent::Preview(res) => self.on_preview_result(res),
             BackendEvent::Platform { action, result } => self.on_platform_outcome(action, result),
@@ -333,6 +338,19 @@ mod tests {
         t.pump();
         assert!(std::sync::Arc::ptr_eq(&t.app.snapshot, &t.fixture.snapshot));
         assert!(t.fake.calls().contains(&Call::SetSnapshot));
+    }
+
+    #[test]
+    fn a_parked_snapshot_is_taken_and_forwarded() {
+        let mut t = TestApp::new();
+        t.fake.clear();
+        let slot = std::sync::Arc::new(crate::backend::SnapshotSlot::default());
+        slot.put(t.fixture.snapshot.clone());
+        t.fake.send(BackendEvent::Snapshot(slot.clone()));
+        t.pump();
+        assert!(std::sync::Arc::ptr_eq(&t.app.snapshot, &t.fixture.snapshot));
+        assert!(t.fake.calls().contains(&Call::SetSnapshot));
+        assert!(slot.take().is_none(), "the UI took it");
     }
 
     #[test]

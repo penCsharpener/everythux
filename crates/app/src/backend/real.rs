@@ -17,7 +17,7 @@ use everythux_preview::{PreviewLimits, PreviewService, TextEncoding};
 use everythux_search::{SearchRequest, SearchService};
 
 use super::workers::{
-    CONFIG_DEBOUNCE, ConfigSaver, HistorySaver, forward, spawn_compute_worker, spawn_worker,
+    CONFIG_DEBOUNCE, ConfigSaver, HistorySaver, forward, forward_index, spawn_compute_worker, spawn_worker,
 };
 use super::{Backend, BackendEvent, Compute, PlatformAction};
 use everythux_core::history::SearchHistory;
@@ -160,7 +160,7 @@ fn run_indexer_host(
 ) {
     let indexer = match Indexer::start(db_file, settings) {
         Ok((indexer, index_rx)) => {
-            forward(index_rx, events.clone(), ctx.clone(), BackendEvent::Index);
+            forward_index(index_rx, events.clone(), ctx.clone());
             indexer
         }
         Err(e) => {
