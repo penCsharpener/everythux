@@ -6,7 +6,7 @@ This document plans the work from an empty repository to a 1.0 release. It cover
 the architecture, the data model, the phases in build order (each with tasks and
 acceptance criteria), and the risks and open questions.
 
-## Implementation status (2026-10-13)
+## Implementation status (2026-10-20)
 
 **v0.5** (released as 0.5.0) adds inline rename, multiple AND-combined search bars, more robust text previews and a
 fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Done:
@@ -63,6 +63,12 @@ fixed preview pane width. The plan is in [ROADMAP-v0.5.md](ROADMAP-v0.5.md). Don
 - 0.16.3: Fixes a memory leak: a burst of live index updates started one uncancelled search-index build per snapshot, all alive at once; now one build runs at a time and superseded snapshots are dropped unbuilt.
 - 0.16.4: Fixes the idle memory growth (~40 GB in 90 min): while the window was hidden, every live-update snapshot piled up in the UI event channel; now only the newest snapshot waits for the UI.
   `ui.properties_target` only steers the Size/Modified double-click.
+- 0.17.0: **manual indexing mode** (Index → Automatic indexing, `indexer.automatic`, default on): off switches the
+  inotify watcher, scheduled rescans and the startup rescan off at runtime (an empty database is still built once).
+  The app's own deletes, moves, renames and pastes are then recorded as folders out of sync (`dirty-folders.list`,
+  shown in the status bar); `Ctrl+Shift+R` (new `keybindings.update_index`, Index → Update index) re-lists them with
+  one `RefreshDirs` job, or quick-rescans all volumes when none are recorded. The key still runs the full reindex in
+  automatic mode.
 Phases 0–9 are implemented apart from the open checkboxes below; Phase 10 and 11 are partly done.
 Still open, in rough priority order:
 
@@ -302,6 +308,7 @@ hot-reloaded.
   },
   "keybindings": {
     "reindex_all": "Ctrl+Shift+R",
+    "update_index": "Ctrl+Shift+R",
     "exclude_path_click": "Ctrl+Shift+LeftClick",
     "toggle_preview": "Ctrl+P",
     "focus_search": "Ctrl+F"
@@ -310,6 +317,7 @@ hot-reloaded.
     "threads": 0,
     "follow_symlinks": false,
     "one_filesystem": true,
+    "automatic": true,
     "rescan_on_startup": "quick",
     "scheduled_rescan_minutes": 0
   },
@@ -550,7 +558,7 @@ Cumulative effort at part-time pace: v0.1 in about 9–10 weeks, v0.2 at about 1
 | Input | Context | Action |
 |-------|---------|--------|
 | Typing | anywhere | Search (search box auto-focused) |
-| `Ctrl+Shift+R` | global | Full reindex of all volumes (background, cancellable) |
+| `Ctrl+Shift+R` | global | Full reindex of all volumes (background, cancellable); with `indexer.automatic` off: update the index (re-list the folders changed by in-app file operations, else quick rescan) |
 | Double-click | Name cell | Open file with its default application |
 | Double-click | Path cell | Open containing folder in the file manager, with the file selected |
 | Double-click | Size / Modified cell | Open folder properties (file manager, or built-in dialog) |
