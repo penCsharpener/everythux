@@ -17,7 +17,10 @@ Options:
   --no-tarball      Do not build the .tar.gz
   --skip-checks     Skip `cargo fmt --all --check` and `cargo clippy ... -D warnings`
   --test            Also run `cargo test --workspace --all-features`
-  --install-tools   Run `cargo install cargo-deb --locked` if cargo-deb is missing
+  --sweep-days N    After packaging, run `cargo sweep --time N` to delete build artefacts not
+                    used for N days (default: 7)
+  --no-sweep        Do not run cargo-sweep
+  --install-tools   Run `cargo install cargo-deb cargo-sweep --locked` if one is missing
   -h, --help        Show this help
 
 Outputs (in DIR):
@@ -52,6 +55,7 @@ DO_TARBALL=1
 DO_CHECKS=1
 DO_TEST=0
 INSTALL_TOOLS=0
+SWEEP_DAYS=7
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -89,6 +93,19 @@ while [ $# -gt 0 ]; do
             DO_TEST=1
             shift
             ;;
+        --sweep-days)
+            [ $# -ge 2 ] || die "--sweep-days needs a number of days"
+            SWEEP_DAYS="$2"
+            shift 2
+            ;;
+        --sweep-days=*)
+            SWEEP_DAYS="${1#--sweep-days=}"
+            shift
+            ;;
+        --no-sweep)
+            SWEEP_DAYS=0
+            shift
+            ;;
         --install-tools)
             INSTALL_TOOLS=1
             shift
@@ -117,6 +134,9 @@ cd -- "$ROOT"
 [ -n "$OUT" ] || OUT="$ROOT/dist"
 
 command -v cargo >/dev/null 2>&1 || die "cargo not found in PATH"
+case "$SWEEP_DAYS" in
+    "" | *[!0-9]*) die "--sweep-days needs a whole number of days, got '$SWEEP_DAYS'" ;;
+esac
 
 if [ "$DO_DEB" -eq 1 ] && ! cargo deb --version >/dev/null 2>&1; then
     if [ "$INSTALL_TOOLS" -eq 1 ]; then
@@ -126,6 +146,17 @@ if [ "$DO_DEB" -eq 1 ] && ! cargo deb --version >/dev/null 2>&1; then
         printf 'error: cargo-deb is not installed. Install it with:\n  cargo install cargo-deb --locked\n' >&2
         printf 'or pass --install-tools to let this script do it (or use --no-deb).\n' >&2
         exit 1
+    fi
+fi
+
+# cargo-sweep is optional: without it the sweep step is skipped with a warning.
+if [ "$SWEEP_DAYS" -gt 0 ] && ! cargo sweep --version >/dev/null 2>&1; then
+    if [ "$INSTALL_TOOLS" -eq 1 ]; then
+        info "installing cargo-sweep"
+        cargo install cargo-sweep --locked
+    else
+        echo "warning: cargo-sweep is not installed, skipping the cleanup (cargo install cargo-sweep --locked)" >&2
+        SWEEP_DAYS=0
     fi
 fi
 
@@ -257,6 +288,14 @@ fi
 if [ "${#SUM_FILES[@]}" -gt 0 ]; then
     info "writing SHA256SUMS"
     (cd -- "$OUT" && sha256sum -- "${SUM_FILES[@]}" >SHA256SUMS)
+fi
+
+# --- cleanup ----------------------------------------------------------------------------------
+# Runs after packaging, so the artefacts of this build are fresh and always kept. A failed
+# sweep must not fail a finished release.
+if [ "$SWEEP_DAYS" -gt 0 ]; then
+    info "cargo sweep --time $SWEEP_DAYS"
+    cargo sweep --time "$SWEEP_DAYS" || echo "warning: cargo sweep failed, build artefacts were not cleaned" >&2
 fi
 
 # --- summary ----------------------------------------------------------------------------------
